@@ -2,8 +2,8 @@ import threading
 import os
 import time
 import pjsua2 as pj
-from stt.deepgram_stt import stt_from_wav  # импортируем функцию STT
-from llm.agent import process_transcript  # импортируем LLM
+from stt.deepgram_stt import stt_from_wav, DeepgramSTTSession  # импортируем функцию STT и новый класс STT
+from sip.utils import get_active_lead_id  # импортируем функцию get_active_lead_id
 
 class Call(pj.Call):
     current = None  # Ссылка на текущий активный звонок
@@ -16,7 +16,8 @@ class Call(pj.Call):
         self._recorder = None
         self._stream_thread = None
         self._audio_media = None
-        self._stt_thread = None  # поток STT
+        self._stt_session = None  # объект сессии STT
+        self._recording_filename = None  # имя файла для записи
         Call.current = self  # Установить текущий звонок
 
     def onCallState(self, prm):
@@ -72,26 +73,25 @@ class Call(pj.Call):
                     print(f"[PJSUA] Не удалось получить информацию о кодеке: {e}")
                 self.start_audio_streaming(mi.index)
 
+    def connect_stt_session(self, filename):
+        self._recording_filename = filename
+        self._stt_session = DeepgramSTTSession(filename)
+        self._stt_session.connect()
+
     def start_audio_streaming(self, media_index):
         if self.audio_streaming:
             return
         self.audio_streaming = True
-        timestamp = int(time.time())
-        filename = os.path.join('recordings', f"call_{timestamp}.wav")
+        filename = self._recording_filename
         print(f"[PJSUA] Запись идёт: {filename}")
-        
-        def on_utterance_end(transcript):
-            print(f"[STT->LLM] Передаём в LLM: {transcript}")
-            llm_response = process_transcript(transcript)
-            print(f"[LLM] Ответ: {llm_response}")
-
         try:
             self._recorder = pj.AudioMediaRecorder()
             self._recorder.createRecorder(filename)
             self._audio_media = pj.AudioMedia.typecastFromMedia(self.getMedia(media_index))
             self._audio_media.startTransmit(self._recorder)
-            # --- Запуск STT с callback ---
-            self._stt_thread = stt_from_wav(filename, on_utterance_end=on_utterance_end)
+            # --- Запуск отправки аудио в Deepgram ---
+            if self._stt_session:
+                self._stt_session.start_streaming()
         except Exception as e:
             print(f"[PJSUA] Ошибка при инициализации аудио: {e}")
             return

@@ -5,7 +5,7 @@ from crm.crm_api import load_enriched_funnel_config
 from llm.tools import fill_crm_field, skip_crm_field, set_remove_question_callback
 from crm.status_config import STAGE_STATUS_IDS
 from crm.crm_api import AmoCRMClient
-from sip.account import get_active_lead_id
+from sip.utils import get_active_lead_id
 
 class LLMAgent:
     def __init__(self, instructions=SYSTEM_PROMPT, model=LLM):

@@ -25,10 +25,18 @@ if not DEEPGRAM_API_KEY:
     logging.error('Не задан Deepgram API key в переменной DEEPGRAM_API_KEY')
     exit(1)
 
-stop_event = threading.Event()
+class DeepgramSTTSession:
+    def __init__(self, wav_file):
+        self.wav_file = wav_file
+        self.ws = None
+        self.stop_event = threading.Event()
+        self.loop = None
+        self.thread = None
+        self.connected_event = threading.Event()
+        self._send_task = None
+        self._recv_task = None
 
-def stt_from_wav(wav_file, on_utterance_end=None):
-    async def send_and_receive():
+    async def _connect_ws(self):
         url = (
             f"wss://api.deepgram.com/v1/listen"
             f"?encoding=linear16"
@@ -45,66 +53,76 @@ def stt_from_wav(wav_file, on_utterance_end=None):
         headers = {
             'Authorization': f'Token {DEEPGRAM_API_KEY}'
         }
+        self.ws = await websockets.connect(url, additional_headers=headers)
+        logging.info('Подключено к Deepgram Realtime API')
+        self.connected_event.set()
 
-        async with websockets.connect(url, additional_headers=headers) as ws:
-            logging.info('Подключено к Deepgram Realtime API')
+    async def _send_loop(self):
+        with open(self.wav_file, 'rb') as f_read:
+            f_read.seek(44)
+            position = 44
+            while not self.stop_event.is_set():
+                f_read.seek(position)
+                chunk = f_read.read(CHUNK * 2)
+                if chunk:
+                    await self.ws.send(chunk)
+                    position += len(chunk)
+                else:
+                    await asyncio.sleep(0.1)
+            await self.ws.send(json.dumps({"type": "CloseStream"}))
 
-            buffer = []  # Буфер для накопления строк
+    async def _receive_loop(self):
+        buffer = []
+        async for message in self.ws:
+            data = json.loads(message)
+            if 'type' in data and data['type'] == 'SpeechStarted':
+                timestamp = data.get('timestamp', 0)
+                print(f"[VAD EVENT] SpeechStarted at {timestamp}s")
+                continue
+            if 'type' in data and data['type'] == 'UtteranceEnd':
+                last_word_end = data.get('last_word_end', 0)
+                print(f"[UTTERANCE END] Конец речи в {last_word_end}s")
+                full_text = ' '.join([b.strip() for b in buffer]).strip()
+                if full_text:
+                    print(f"[STT] Расшифровка: {full_text}")
+                buffer = []
+                continue
+            if 'channel' in data:
+                if isinstance(data['channel'], dict):
+                    is_final = data.get('is_final', False)
+                    if is_final:
+                        channel = data['channel']
+                        alts = channel.get('alternatives', [])
+                        if alts and len(alts) > 0:
+                            transcript = alts[0].get('transcript', '').strip()
+                            if transcript:
+                                print(transcript)
+                                buffer.append(transcript)
 
-            async def send_loop():
-                with open(wav_file, 'rb') as f_read:
-                    f_read.seek(44)
-                    position = 44
-                    while not stop_event.is_set():
-                        f_read.seek(position)
-                        chunk = f_read.read(CHUNK * 2)
-                        if chunk:
-                            await ws.send(chunk)
-                            position += len(chunk)
-                        else:
-                            await asyncio.sleep(0.1)
-                    await ws.send(json.dumps({"type": "CloseStream"}))
+    def connect(self):
+        def run():
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+            self.loop.run_until_complete(self._connect_ws())
+        self.thread = threading.Thread(target=run, daemon=True)
+        self.thread.start()
+        self.connected_event.wait()  # Ждём подключения
+        return self
 
-            async def receive_loop():
-                nonlocal buffer
-                async for message in ws:
-                    data = json.loads(message)
-                    if 'type' in data and data['type'] == 'SpeechStarted':
-                        timestamp = data.get('timestamp', 0)
-                        print(f"[VAD EVENT] SpeechStarted at {timestamp}s")
-                        continue
-                    if 'type' in data and data['type'] == 'UtteranceEnd':
-                        last_word_end = data.get('last_word_end', 0)
-                        print(f"[UTTERANCE END] Конец речи в {last_word_end}s")
-                        # --- Отправляем накопленный текст в callback ---
-                        full_text = ''.join(buffer).strip()
-                        if full_text and on_utterance_end:
-                            on_utterance_end(full_text)
-                        buffer = []
-                        continue
-                    if 'channel' in data:
-                        if isinstance(data['channel'], dict):
-                            is_final = data.get('is_final', False)
-                            if is_final:
-                                channel = data['channel']
-                                alts = channel.get('alternatives', [])
-                                if alts and len(alts) > 0:
-                                    transcript = alts[0].get('transcript', '').strip()
-                                    if transcript:
-                                        print(transcript)
-                                        buffer.append(transcript + '\n')
+    def start_streaming(self):
+        def run():
+            asyncio.set_event_loop(self.loop)
+            self._send_task = self.loop.create_task(self._send_loop())
+            self._recv_task = self.loop.create_task(self._receive_loop())
+            self.loop.run_until_complete(asyncio.gather(self._send_task, self._recv_task))
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
+        return t
 
-            await asyncio.gather(send_loop(), receive_loop())
+# Старый интерфейс для обратной совместимости
 
-    def run():
-        try:
-            asyncio.run(send_and_receive())
-        except KeyboardInterrupt:
-            logging.info('Получен KeyboardInterrupt, останавливаем...')
-        finally:
-            stop_event.set()
-            logging.info('STT-модуль завершён.')
-
-    thread = threading.Thread(target=run, daemon=True)
-    thread.start()
-    return thread 
+def stt_from_wav(wav_file):
+    session = DeepgramSTTSession(wav_file)
+    session.connect()
+    session.start_streaming()
+    return session 

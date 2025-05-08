@@ -5,6 +5,8 @@ from .call import Call
 import re
 from crm.status_config import STAGE_STATUS_IDS
 import uuid
+import os
+import time
 
 class Account(pj.Account):
     def __init__(self, sip_event_queue, transcript_queue=None):
@@ -23,7 +25,12 @@ class Account(pj.Account):
         call_id = str(uuid.uuid4())
         call = Call(self, prm.callId)
         self.sip_event_queue.current_call = call
-        
+
+        # --- Новый порядок: сначала соединение с Deepgram, потом ответ ---
+        timestamp = int(time.time())
+        filename = os.path.join('recordings', f"call_{timestamp}.wav")
+        call.connect_stt_session(filename)
+
         # Автоматически принимаем звонок
         call_prm = pj.CallOpParam()
         call_prm.statusCode = 200
@@ -59,10 +66,14 @@ class Account(pj.Account):
         #     threading.Thread(target=wait_crm, daemon=True).start()
         # # Ответ на звонок произойдет после соединения с Deepgram
 
+        # Запуск аудиостриминга после ответа
+        def start_streaming_after_answer():
+            # Ждём, пока медиа станет активной (onCallMediaState)
+            while not hasattr(call, '_audio_media') or call._audio_media is None:
+                time.sleep(0.05)
+            # media_index можно получить из call._audio_media, но для простоты используем 0
+            call.start_audio_streaming(0)
+        threading.Thread(target=start_streaming_after_answer, daemon=True).start()
+
 # Глобальный доступ к lead_id для инструментов
 _active_lead_id = None
-def get_active_lead_id():
-    """Возвращает ID текущей активной сделки из очереди событий"""
-    import sip.call
-    if sip.call.Call.current and hasattr(sip.call.Call.current.acc.sip_event_queue, 'config'):
-        return sip.call.Call.current.acc.sip_event_queue.config.get('ACTIVE_LEAD_ID')

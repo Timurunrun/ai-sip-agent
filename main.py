@@ -5,7 +5,6 @@ from config import load_config
 from sip.endpoint import create_endpoint
 from sip.account import Account
 from crm.crm_api import enrich_funnel_config_with_crm
-from llm.agent import process_transcript  # LLM integration
 
 def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
@@ -45,9 +44,7 @@ def main():
                     while True:
                         transcript = transcript_queue.get_nowait()
                         if transcript:
-                            logging.info(f"[STT] Получена транскрипция: {transcript}")
-                            llm_response = process_transcript(transcript)
-                            logging.info(f"[LLM] Ответ: {llm_response}")
+                            print(f"[STT] Расшифровка: {transcript}")
                         else:
                             logging.warning("[STT] Получена пустая транскрипция")
                 except queue.Empty:
