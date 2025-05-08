@@ -72,7 +72,7 @@ venv.bak/
 Thumbs.db
 desktop.ini
 
-# Recordings (исходя из структуры проекта, это временные/бинарные файлы)
+# Recordings
 recordings/
 
 # Личные/секретные конфиги
@@ -83,3 +83,4 @@ recordings/
 
 # Игнорировать файлы и папки git
 .git/ 
+enriched_funnel_config.json

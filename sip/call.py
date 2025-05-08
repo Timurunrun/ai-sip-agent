@@ -18,7 +18,8 @@ class Call(pj.Call):
         self._audio_media = None
         self._stt_session = None  # объект сессии STT
         self._recording_filename = None  # имя файла для записи
-        Call.current = self  # Установить текущий звонок
+        self.lead_id = None  # ID сделки из CRM
+        Call.current = self  # установить текущий звонок
 
     def onCallState(self, prm):
         ci = self.getInfo()
@@ -59,6 +60,9 @@ class Call(pj.Call):
             if hasattr(self.acc.sip_event_queue, 'current_call'):
                 self.acc.sip_event_queue.current_call = None
             Call.current = None
+            # Корректно закрываем Deepgram STT сессию
+            if self._stt_session:
+                self._stt_session.close()
             print("[PJSUA] Вызов завершен и ресурсы освобождены")
 
     def onCallMediaState(self, prm):

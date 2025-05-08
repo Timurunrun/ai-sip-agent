@@ -26,7 +26,6 @@ class Account(pj.Account):
         call = Call(self, prm.callId)
         self.sip_event_queue.current_call = call
 
-        # --- Новый порядок: сначала соединение с Deepgram, потом ответ ---
         timestamp = int(time.time())
         filename = os.path.join('recordings', f"call_{timestamp}.wav")
         call.connect_stt_session(filename)
@@ -44,27 +43,36 @@ class Account(pj.Account):
         if match:
             phone_number = match.group(1)
             print(f"[PJSUA] Номер звонящего: {phone_number}")
+            # --- Асинхронный фоновый поиск сделки по номеру ---
+            def find_lead_bg():
+                from crm.crm_api import AmoCRMClient, wait_for_contact_and_lead
+                amocrm_client = AmoCRMClient()
+                max_attempts = 5
+                for attempt in range(1, max_attempts + 1):
+                    contact, lead = wait_for_contact_and_lead(phone_number, amocrm_client, ringback_callback=lambda **kwargs: None)
+                    if lead and 'id' in lead:
+                        call.lead_id = lead['id']
+                        if hasattr(self.sip_event_queue, 'config') and isinstance(self.sip_event_queue.config, dict):
+                            self.sip_event_queue.config['ACTIVE_LEAD_ID'] = lead['id']
+                        print(f"[CRM] Контакт и сделка найдены: contact_id={contact.get('id') if contact else None}, lead_id={lead['id']}")
+                        # --- Смена статуса на 'взята в работу' ---
+                        status, resp = amocrm_client.update_lead_status(lead['id'], STAGE_STATUS_IDS[0])
+                        print(f"[CRM] Статус сделки обновлён: {status}, {resp}")
+                        break
+                    else:
+                        print(f"[CRM] Попытка {attempt}: не удалось найти контакт/сделку по номеру")
+                        if attempt == max_attempts:
+                            print("[CRM] Не удалось найти сделку за 5 попыток, сбрасываем вызов")
+                            try:
+                                call.hangup()
+                            except Exception as e:
+                                print(f"[CRM] Ошибка при сбросе вызова: {e}")
+                        else:
+                            time.sleep(1.0)
+            threading.Thread(target=find_lead_bg, daemon=True).start()
         else:
             print(f"[PJSUA] Не удалось извлечь номер из {ci.remoteUri}")
             phone_number = None
-        # # --- Ожидание карточки и сделки в CRM ---
-        # from crm.crm_api import AmoCRMClient, wait_for_contact_and_lead
-        # if not phone_number:
-        # print("[CRM] Нет номера для поиска контакта!")
-        #     return
-        # amocrm_client = AmoCRMClient()
-        # contact, lead = wait_for_contact_and_lead(phone_number, amocrm_client, ringback_cb)
-        # if contact and lead:
-        #     print(f"[CRM] Контакт и сделка найдены: contact_id={contact['id']}, lead_id={lead['id']}")
-        #     call.lead_id = lead['id']
-        #     # Смена статуса на "Взята в работу"
-        #     client = AmoCRMClient()
-        #     status, resp = client.update_lead_status(lead['id'], STAGE_STATUS_IDS[0])
-        #     print(f"[CRM] Статус сделки обновлён: {status}, {resp}")
-        # else:
-        #     print("[CRM] Не удалось найти контакт/сделку по номеру за отведённое время")
-        #     threading.Thread(target=wait_crm, daemon=True).start()
-        # # Ответ на звонок произойдет после соединения с Deepgram
 
         # Запуск аудиостриминга после ответа
         def start_streaming_after_answer():

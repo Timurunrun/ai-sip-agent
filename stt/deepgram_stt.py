@@ -119,6 +119,28 @@ class DeepgramSTTSession:
         t.start()
         return t
 
+    def close(self):
+        """Корректно завершает стриминг и закрывает WebSocket соединение с Deepgram."""
+        if self.ws is None or self.loop is None:
+            return
+        async def _close_ws():
+            try:
+                await self.ws.send(json.dumps({"type": "CloseStream"}))
+                await asyncio.sleep(0.2)
+                await self.ws.close()
+            except Exception as e:
+                logging.error(f"Ошибка при закрытии Deepgram WebSocket: {e}")
+        try:
+            if self.loop.is_running():
+                # Если event loop уже запущен, используем run_coroutine_threadsafe
+                fut = asyncio.run_coroutine_threadsafe(_close_ws(), self.loop)
+                # Можно не ждать завершения, но если нужно:
+                # fut.result(timeout=2)
+            else:
+                self.loop.run_until_complete(_close_ws())
+        except Exception as e:
+            logging.error(f"Ошибка при завершении Deepgram STT: {e}")
+
 # Старый интерфейс для обратной совместимости
 
 def stt_from_wav(wav_file):
