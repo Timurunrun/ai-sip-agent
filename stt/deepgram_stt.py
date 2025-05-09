@@ -5,6 +5,7 @@ import websockets
 import wave
 import json
 import logging
+from llm.agent import process_transcript  # импортируем функцию для LLM
 
 # Настройка логирования
 logging.basicConfig(
@@ -85,7 +86,13 @@ class DeepgramSTTSession:
                 full_text = ' '.join([b.strip() for b in buffer]).strip()
                 if full_text:
                     print(f"[STT] Расшифровка: {full_text}")
-                buffer = []
+                    # --- Отправляем в LLM и выводим ответ в отдельном потоке ---
+                    def llm_thread():
+                        asyncio.set_event_loop(asyncio.new_event_loop())
+                        llm_response = process_transcript(full_text)
+                        print(f"[LLM] Ответ: {llm_response}")
+                    threading.Thread(target=llm_thread, daemon=True).start()
+                    buffer = []
                 continue
             if 'channel' in data:
                 if isinstance(data['channel'], dict):
@@ -97,7 +104,7 @@ class DeepgramSTTSession:
                             transcript = alts[0].get('transcript', '').strip()
                             if transcript:
                                 print(transcript)
-                                buffer.append(transcript)
+                            buffer.append(transcript)
 
     def connect(self):
         def run():

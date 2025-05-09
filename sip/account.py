@@ -26,6 +26,10 @@ class Account(pj.Account):
         call = Call(self, prm.callId)
         self.sip_event_queue.current_call = call
 
+        # Явная инициализация LLM-агента заранее
+        from llm.agent import get_llm_agent
+        get_llm_agent()
+
         timestamp = int(time.time())
         filename = os.path.join('recordings', f"call_{timestamp}.wav")
         call.connect_stt_session(filename)
