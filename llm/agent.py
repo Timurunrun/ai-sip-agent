@@ -1,4 +1,5 @@
 from agents import Agent, Runner
+from agents.run import RunConfig
 import threading
 import logging
 import json
@@ -107,7 +108,8 @@ class LLMAgent:
                 input_data = user_message
             else:
                 input_data = self.history + [{"role": "user", "content": user_message}]
-            result = Runner.run_sync(self.agent, input_data)
+            run_config = RunConfig(tracing_disabled=True)
+            result = Runner.run_sync(self.agent, input_data, run_config=run_config)
             llm_reply = result.final_output
             if not self.history:
                 self.history = [
@@ -125,7 +127,8 @@ class LLMAgent:
                         input_data = user_message
                     else:
                         input_data = self.history + [{"role": "user", "content": user_message}]
-                    result = Runner.run_sync(self.agent, input_data)
+                    run_config = RunConfig(tracing_disabled=True)
+                    result = Runner.run_sync(self.agent, input_data, run_config=run_config)
                     llm_reply = result.final_output
                     if not self.history:
                         self.history = [
