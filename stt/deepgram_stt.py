@@ -5,7 +5,7 @@ import websockets
 import wave
 import json
 import logging
-from llm.agent import process_transcript  # импортируем функцию для LLM
+from llm.agent import process_transcript, process_transcript_async  # импортируем функции для LLM
 
 # Настройка логирования
 logging.basicConfig(
@@ -88,8 +88,23 @@ class DeepgramSTTSession:
                     print(f"[STT] Расшифровка: {full_text}")
                     # --- Отправляем в LLM и выводим ответ в отдельном потоке ---
                     def llm_thread():
-                        asyncio.set_event_loop(asyncio.new_event_loop())
-                        llm_response = process_transcript(full_text)
+                        import inspect
+                        try:
+                            # Если process_transcript_async существует, используем его
+                            if inspect.iscoroutinefunction(process_transcript_async):
+                                try:
+                                    loop = asyncio.get_running_loop()
+                                except RuntimeError:
+                                    loop = None
+                                if loop and loop.is_running():
+                                    fut = asyncio.run_coroutine_threadsafe(process_transcript_async(full_text), loop)
+                                    llm_response = fut.result()
+                                else:
+                                    llm_response = asyncio.run(process_transcript_async(full_text))
+                            else:
+                                llm_response = process_transcript(full_text)
+                        except Exception as e:
+                            llm_response = f"[LLM] Ошибка: {e}"
                         print(f"[LLM] Ответ: {llm_response}")
                     threading.Thread(target=llm_thread, daemon=True).start()
                     buffer = []

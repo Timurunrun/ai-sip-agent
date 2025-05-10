@@ -13,7 +13,7 @@ def set_remove_question_callback(cb):
 @function_tool
 def fill_crm_field(field_id: int, field_type: str, value: str):
     """
-    Заполнить и сохранить одно поле в CRM-системе (через API AmoCRM).
+    Заполнить одно поле в CRM-системе (через API AmoCRM).
     Args:
         field_id: ID поля
         field_type: Тип поля (text, textarea, numeric, checkbox, select, multiselect, date)
@@ -73,9 +73,10 @@ def fill_crm_field(field_id: int, field_type: str, value: str):
         remove_question_callback(field_id, field_type, value)
     
     if status == 200:
-        return "Поле успешно заполнено"
+        result_msg = "Поле успешно заполнено"
     else:
-        return f"Не удалось заполнить поле: {resp}"
+        result_msg = f"Не удалось заполнить поле: {resp}"
+    return result_msg
 
 @function_tool
 def skip_crm_field(field_id: int):
@@ -89,5 +90,5 @@ def skip_crm_field(field_id: int):
     # Отмечаем вопрос как пропущенный
     if remove_question_callback:
         remove_question_callback(field_id, "skipped", "ПРОПУЩЕНО")
-        
+    
     return "Поле пропущено"
