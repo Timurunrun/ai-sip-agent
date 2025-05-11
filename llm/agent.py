@@ -25,7 +25,7 @@ class LLMAgent:
     def __init__(self, instructions=SYSTEM_PROMPT, model=LLM):
         self.instructions = instructions
         self.model = model
-        self.lock = asyncio.Lock()  # асинхронный lock
+        self.lock = asyncio.Lock()  # Асинхронный lock
         self.history = []  # Список сообщений для контекста
         self.stage_idx = 0
         self.llm_busy = False  # Флаг занятости LLM
@@ -100,23 +100,30 @@ class LLMAgent:
             info.append('- нет')
         return '\n'.join(info)
 
+    def _prepare_next_available_stage(self):
+        """Переходит к следующему этапу с вопросами или возвращает False, если все этапы завершены."""
+        while not self.get_remaining_questions():
+            if not self.next_stage():
+                return False
+        return True
+
     async def process_async(self, user_text):
         if self.llm_busy:
             print("[DEBUG][STT->LLM] LLM ещё не ответила, новый запрос игнорируется.")
             return "[LLM] Пожалуйста, дождитесь ответа на предыдущий вопрос."
+        
         async with self.lock:
             self.llm_busy = True
             try:
                 print(f"[DEBUG][STT->LLM] Получен текст: {user_text}")
                 print(f"[DEBUG][STT->LLM] Текущий этап: {self.stage_idx + 1} — {self.get_current_stage()['name']}")
                 print(f"[DEBUG][STT->LLM] Осталось вопросов: {len(self.get_remaining_questions())}")
-                while not self.get_remaining_questions():
-                    print(f"[DEBUG][STT->LLM] Нет оставшихся вопросов на этапе {self.stage_idx + 1}, пробую перейти к следующему этапу...")
-                    if not self.next_stage():
-                        print(f"[DEBUG][STT->LLM] Воронка завершена. Все вопросы заданы.")
-                        return "[Воронка завершена. Все вопросы заданы.]"
-                    print(f"[DEBUG][STT->LLM] Перешли к этапу {self.stage_idx + 1}")
-                    print(f"[DEBUG][STT->LLM] Осталось вопросов: {len(self.get_remaining_questions())}")
+                
+                # Проверяем, есть ли вопросы на текущем этапе, если нет - переходим к следующему
+                if not self._prepare_next_available_stage():
+                    print(f"[DEBUG][STT->LLM] Воронка завершена. Все вопросы заданы.")
+                    return "Спасибо! Все этапы заполнены, менеджер свяжется с вами для уточнения деталей."
+                
                 sys_info = self._system_info()
                 remaining = self.get_remaining_questions()
                 if remaining:
@@ -124,44 +131,41 @@ class LLMAgent:
                     print(f"[LLM] Осталось задать вопросы: {names}")
                 else:
                     print("[LLM] Все вопросы на этапе заданы или пропущены.")
+                
                 user_message = f"{user_text}\n\n<<<\n{sys_info}\n>>>"
                 print(f"[DEBUG][STT->LLM] Формирую входные данные для LLM...")
+                
                 if not self.history:
                     input_data = user_message
                 else:
                     input_data = self.history + [{"role": "user", "content": user_message}]
+                
                 run_config = RunConfig(tracing_disabled=False)
+                
                 try:
                     print(f"[DEBUG][STT->LLM] Запускаю LLM...")
                     result = await Runner.run(self.agent, input_data, run_config=run_config)
                     llm_reply = result.final_output
                     print(f"[DEBUG][STT->LLM] Ответ LLM получен: {llm_reply}")
+                    
                     if not self.history:
                         self.history = result.to_input_list()
                     else:
                         self.history = result.to_input_list()
-                    while not self.get_remaining_questions():
-                        print(f"[DEBUG][STT->LLM] После ответа LLM нет оставшихся вопросов, пробую перейти к следующему этапу...")
-                        if self.next_stage():
-                            sys_info = self._system_info()
-                            user_message = f"\n<<<\n{sys_info}\n>>>"
-                            if not self.history:
-                                input_data = user_message
-                            else:
-                                input_data = self.history + [{"role": "user", "content": user_message}]
-                            run_config = RunConfig(tracing_disabled=False)
-                            print(f"[DEBUG][STT->LLM] Запускаю LLM для нового этапа...")
-                            result = await Runner.run(self.agent, input_data, run_config=run_config)
-                            llm_reply = result.final_output
-                            print(f"[DEBUG][STT->LLM] Ответ LLM для нового этапа: {llm_reply}")
-                            if not self.history:
-                                self.history = result.to_input_list()
-                            else:
-                                self.history = result.to_input_list()
+                    
+                    # После ответа LLM проверяем, остались ли вопросы
+                    # Если нет, готовим следующий этап, но не делаем новый запрос к LLM
+                    if not self.get_remaining_questions():
+                        if self._prepare_next_available_stage():
+                            # Добавляем к ответу информацию о переходе на новый этап
+                            stage = self.get_current_stage()
+                            transition_message = f"\n\nМы переходим к следующему этапу: {stage['name']}."
+                            llm_reply += transition_message
                         else:
-                            print(f"[DEBUG][STT->LLM] Все этапы заполнены, завершаю работу.")
-                            return "Спасибо! Все этапы заполнены, менеджер свяжется с вами для уточнения деталей."
+                            llm_reply += "\n\nСпасибо! Все этапы заполнены, менеджер свяжется с вами для уточнения деталей."
+                    
                     return llm_reply
+                    
                 except Exception as e:
                     logging.error(f"[LLM] Ошибка при обработке: {str(e)}", exc_info=True)
                     print(f"[DEBUG][STT->LLM] Произошла ошибка: {str(e)}")
