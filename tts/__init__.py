@@ -1,1 +1,1 @@
-# инициализация tts
+from .elevenlabs_tts import tts_to_wav 

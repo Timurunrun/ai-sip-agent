@@ -19,6 +19,8 @@ class Call(pj.Call):
         self._stt_session = None  # объект сессии STT
         self._recording_filename = None  # имя файла для записи
         self.lead_id = None  # ID сделки из CRM
+        self._player = None  # Плеер для проигрывания аудиофайла
+        self._audio_played = False  # Флаг, чтобы проигрывать аудио только один раз после CONFIRMED
         Call.current = self  # установить текущий звонок
 
     def onCallState(self, prm):
@@ -53,6 +55,12 @@ class Call(pj.Call):
                     self._recorder = None
                 if self._audio_media:
                     self._audio_media = None
+                # Освобождаем ресурсы плеера
+                if self._player:
+                    try:
+                        self._player = None
+                    except Exception as e:
+                        print(f"[PJSUA] Ошибка при освобождении плеера: {e}")
             except Exception as e:
                 print(f"[PJSUA] Ошибка при освобождении медиа ресурсов: {e}")
             
@@ -64,6 +72,28 @@ class Call(pj.Call):
             if self._stt_session:
                 self._stt_session.close()
             print("[PJSUA] Вызов завершен и ресурсы освобождены")
+
+        # Проигрываем аудиофайл только после CONFIRMED и только один раз
+        if ci.stateText == "CONFIRMED" and not self._audio_played:
+            self._audio_played = True
+            # Ждём, пока медиа станет активной
+            for _ in range(100):
+                if hasattr(self, '_audio_media') and self._audio_media is not None:
+                    break
+                time.sleep(0.05)
+            try:
+                time.sleep(3)
+                wav_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'TEST_fixed.wav'))
+                if not os.path.isfile(wav_path):
+                    print(f"[PJSUA] Файл для проигрывания не найден: {wav_path}")
+                    return
+                self._player = pj.AudioMediaPlayer()
+                self._player.createPlayer(wav_path, pj.PJMEDIA_FILE_NO_LOOP)
+                self._audio_media = pj.AudioMedia.typecastFromMedia(self.getMedia(0))
+                self._player.startTransmit(self._audio_media)
+                print(f"[PJSUA] Проигрывается файл: {wav_path}")
+            except Exception as e:
+                print(f"[PJSUA] Ошибка при попытке проиграть аудиофайл: {e}")
 
     def onCallMediaState(self, prm):
         ci = self.getInfo()

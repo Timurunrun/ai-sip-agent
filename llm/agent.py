@@ -13,6 +13,9 @@ import weave
 from weave.integrations.openai_agents.openai_agents import WeaveTracingProcessor
 from agents import set_trace_processors
 import asyncio
+import time
+from tts import tts_to_wav  # импортируем функцию TTS
+import os
 
 # Инициализация Weave
 weave.init("pjsua-agent-tracing")
@@ -147,6 +150,17 @@ class LLMAgent:
                     result = await Runner.run(self.agent, input_data, run_config=run_config)
                     llm_reply = result.final_output
                     print(f"[DEBUG][STT->LLM] Ответ LLM получен: {llm_reply}")
+                    
+                    # --- TTS: озвучиваем ответ LLM и сохраняем в WAV ---
+                    tts_dir = "tts/generated"
+                    os.makedirs(tts_dir, exist_ok=True)
+                    timestamp = int(time.time())
+                    filename = f"reply_{timestamp}.wav"
+                    try:
+                        tts_file = tts_to_wav(llm_reply, filename, output_dir=tts_dir)
+                        print(f"[TTS] Аудиофайл сгенерирован: {tts_file}")
+                    except Exception as tts_err:
+                        print(f"[TTS] Ошибка генерации аудио: {tts_err}")
                     
                     if not self.history:
                         self.history = result.to_input_list()

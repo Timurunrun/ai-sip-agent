@@ -41,9 +41,6 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 
-# Jupyter Notebook
-.ipynb_checkpoints
-
 # pyenv
 .python-version
 
@@ -58,8 +55,8 @@ coverage.xml
 .vscode/
 
 # Environments
-.env
-.venv
+*.env
+*.venv
 venv/
 ENV/
 env.bak/
@@ -75,12 +72,15 @@ desktop.ini
 # Recordings
 recordings/
 
-# Личные/секретные конфиги
-*.env
+# TTS
+tts/generated/
 
-# Логи
+# Logs
 *.log
 
-# Игнорировать файлы и папки git
+# Git
 .git/ 
 enriched_funnel_config.json
+
+# Test files
+TEST*.wav

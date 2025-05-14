@@ -45,7 +45,7 @@ class DeepgramSTTSession:
             f"&channels={CHANNELS}"
             f"&interim_results=true"
             f"&punctuate=true"
-            f"&utterance_end_ms=2000"
+            f"&utterance_end_ms=1000"
             f"&endpointing=300"
             f"&vad_events=true"
             f"&language=ru"
