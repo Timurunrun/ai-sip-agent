@@ -17,7 +17,7 @@ class Account(pj.Account):
 
     def onRegState(self, prm):
         print(f"[PJSUA] Статус регистрации: {prm.reason}")
-        if prm.status == 200:  # Проверяем статус регистрации
+        if prm.reason == 'Ok':  # Проверяем статус регистрации
             self.sem_reg.release()
 
     def onIncomingCall(self, prm):

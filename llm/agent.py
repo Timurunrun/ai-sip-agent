@@ -24,14 +24,22 @@ set_trace_processors([WeaveTracingProcessor()])
 # Настройка детального логирования
 logging.basicConfig(level=logging.INFO)
 
+_llm_agent_instance = None
+_llm_agent_tts_queue = None # Глобальная переменная для хранения очереди, используемой агентом
+
+def init_llm_agent_tts_queue(queue_instance): # Вызывается один раз из main
+    global _llm_agent_tts_queue
+    _llm_agent_tts_queue = queue_instance
+
 class LLMAgent:
-    def __init__(self, instructions=SYSTEM_PROMPT, model=LLM):
+    def __init__(self, instructions=SYSTEM_PROMPT, model=LLM, tts_playback_queue=None):
         self.instructions = instructions
         self.model = model
         self.lock = asyncio.Lock()  # Асинхронный lock
         self.history = []  # Список сообщений для контекста
         self.stage_idx = 0
         self.llm_busy = False  # Флаг занятости LLM
+        self.tts_playback_queue = tts_playback_queue # Очередь для TTS файлов
         
         # Хранение информации о вопросах
         self.answered_fields = {}  # {field_id: {"value": value, "type": type}}
@@ -152,13 +160,18 @@ class LLMAgent:
                     print(f"[DEBUG][STT->LLM] Ответ LLM получен: {llm_reply}")
                     
                     # --- TTS: озвучиваем ответ LLM и сохраняем в WAV ---
-                    tts_dir = "tts/generated"
-                    os.makedirs(tts_dir, exist_ok=True)
+                    tts_dir = None  # Используем RAM (/dev/shm) по умолчанию
                     timestamp = int(time.time())
                     filename = f"reply_{timestamp}.wav"
+                    tts_file = None # Инициализируем tts_file
                     try:
                         tts_file = tts_to_wav(llm_reply, filename, output_dir=tts_dir)
                         print(f"[TTS] Аудиофайл сгенерирован: {tts_file}")
+                        if self.tts_playback_queue and tts_file:
+                            self.tts_playback_queue.put(tts_file)
+                            print(f"[LLM] Файл {tts_file} добавлен в очередь на воспроизведение.")
+                        elif not self.tts_playback_queue:
+                            logging.warning("[LLM] TTS playback queue не настроена. Аудио не будет воспроизведено.")
                     except Exception as tts_err:
                         print(f"[TTS] Ошибка генерации аудио: {tts_err}")
                     
@@ -207,7 +220,9 @@ _llm_agent_instance = None
 def get_llm_agent():
     global _llm_agent_instance
     if _llm_agent_instance is None:
-        _llm_agent_instance = LLMAgent()
+        if _llm_agent_tts_queue is None:
+            logging.warning("LLM Agent TTS queue не инициализирована до первого использования! TTS playback не будет работать.")
+        _llm_agent_instance = LLMAgent(tts_playback_queue=_llm_agent_tts_queue)
     return _llm_agent_instance
 
 async def process_transcript_async(transcript):
