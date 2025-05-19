@@ -87,7 +87,7 @@ class Call(pj.Call):
                 time.sleep(0.05)
             try:
                 time.sleep(2)
-                wav_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'TEST_fixed.wav'))
+                wav_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'start_fixed.wav'))
                 self.play_wav(wav_path)
             except Exception as e:
                 print(f"[PJSUA] Ошибка при попытке проиграть аудиофайл: {e}")
@@ -146,7 +146,7 @@ class Call(pj.Call):
                         if not self._audio_media:
                             self._audio_media = pj.AudioMedia.typecastFromMedia(self.getMedia(mi.index))
                         self._bg_player.startTransmit(self._audio_media)
-                        self._bg_player.adjustRxLevel(0.15)  # Тихо
+                        self._bg_player.adjustRxLevel(0.05)
                         print(f"[PJSUA] Фоновый шум запущен: {bg_wav}")
                     else:
                         print(f"[PJSUA] Файл фонового шума не найден: {bg_wav}")
