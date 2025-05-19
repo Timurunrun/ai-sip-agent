@@ -17,7 +17,7 @@ class Account(pj.Account):
 
     def onRegState(self, prm):
         print(f"[PJSUA] Статус регистрации: {prm.reason}")
-        if prm.reason == 'Ok':  # Проверяем статус регистрации
+        if prm.reason == 'Ok':
             self.sem_reg.release()
 
     def onIncomingCall(self, prm):
@@ -26,7 +26,6 @@ class Account(pj.Account):
         call = Call(self, prm.callId)
         self.sip_event_queue.current_call = call
 
-        # Явная инициализация LLM-агента заранее
         from llm.agent import get_llm_agent
         get_llm_agent()
 
@@ -34,20 +33,17 @@ class Account(pj.Account):
         filename = os.path.join('recordings', f"call_{timestamp}.wav")
         call.connect_stt_session(filename)
 
-        # Автоматически принимаем звонок
         call_prm = pj.CallOpParam()
         call_prm.statusCode = 200
         call.answer(call_prm)
         print("[PJSUA] Звонок автоматически принят")
 
-        # Получаем и выводим номер звонящего
         ci = call.getInfo()
         print(f"[PJSUA] Звонок с номера: {ci.remoteUri}")
         match = re.search(r'sip:([^@>]+)@', ci.remoteUri)
         if match:
             phone_number = match.group(1)
             print(f"[PJSUA] Номер звонящего: {phone_number}")
-            # --- Асинхронный фоновый поиск сделки по номеру ---
             def find_lead_bg():
                 from crm.crm_api import AmoCRMClient, wait_for_contact_and_lead
                 amocrm_client = AmoCRMClient()
@@ -59,7 +55,6 @@ class Account(pj.Account):
                         if hasattr(self.sip_event_queue, 'config') and isinstance(self.sip_event_queue.config, dict):
                             self.sip_event_queue.config['ACTIVE_LEAD_ID'] = lead['id']
                         print(f"[CRM] Контакт и сделка найдены: contact_id={contact.get('id') if contact else None}, lead_id={lead['id']}")
-                        # --- Смена статуса на 'взята в работу' ---
                         status, resp = amocrm_client.update_lead_status(lead['id'], STAGE_STATUS_IDS[0])
                         print(f"[CRM] Статус сделки обновлён: {status}, {resp}")
                         break
@@ -78,14 +73,10 @@ class Account(pj.Account):
             print(f"[PJSUA] Не удалось извлечь номер из {ci.remoteUri}")
             phone_number = None
 
-        # Запуск аудиостриминга после ответа
         def start_streaming_after_answer():
-            # Ждём, пока медиа станет активной (onCallMediaState)
             while not hasattr(call, '_audio_media') or call._audio_media is None:
                 time.sleep(0.05)
-            # media_index можно получить из call._audio_media, но для простоты используем 0
             call.start_audio_streaming(0)
         threading.Thread(target=start_streaming_after_answer, daemon=True).start()
 
-# Глобальный доступ к lead_id для инструментов
 _active_lead_id = None

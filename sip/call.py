@@ -6,7 +6,7 @@ from stt.deepgram_stt import stt_from_wav, DeepgramSTTSession
 from sip.utils import get_active_lead_id
 
 class Call(pj.Call):
-    current = None  # Ссылка на текущий активный звонок
+    current = None
     def __init__(self, acc, call_id=pj.PJSUA_INVALID_ID):
         super().__init__(acc, call_id)
         self.acc = acc
@@ -28,14 +28,9 @@ class Call(pj.Call):
         
         if ci.stateText == "DISCONNECTED":
             self.connected = False
-            
-            # 1. Сначала останавливаем стриминг аудио
             self.stop_streaming.set()
-            
-            # 2. Проверяем состояние медиа перед остановкой
             try:
                 if self._audio_media and self._recorder:
-                    # Проверяем, активно ли медиа
                     for mi in ci.media:
                         if (mi.type == pj.PJMEDIA_TYPE_AUDIO and 
                             mi.status == pj.PJSUA_CALL_MEDIA_ACTIVE):
@@ -43,18 +38,13 @@ class Call(pj.Call):
                             break
             except Exception as e:
                 print(f"[PJSUA] Ошибка при остановке аудио: {e}")
-            
-            # 3. Ждем завершения потока стриминга
             if self._stream_thread and self._stream_thread.is_alive():
                 self._stream_thread.join(timeout=1.0)
-            
-            # 4. Освобождаем ресурсы медиа
             try:
                 if self._recorder:
                     self._recorder = None
                 if self._audio_media:
                     self._audio_media = None
-                # Освобождаем ресурсы плеера
                 if self._player:
                     try:
                         self._player = None
@@ -62,18 +52,14 @@ class Call(pj.Call):
                         print(f"[PJSUA] Ошибка при освобождении плеера: {e}")
             except Exception as e:
                 print(f"[PJSUA] Ошибка при освобождении медиа ресурсов: {e}")
-            
-            # 5. Очищаем остальные ресурсы
             if hasattr(self.acc.sip_event_queue, 'current_call'):
                 self.acc.sip_event_queue.current_call = None
             Call.current = None
-            # Корректно закрываем Deepgram STT сессию
             if self._stt_session:
                 self._stt_session.close()
             print("[PJSUA] Вызов завершен и ресурсы освобождены")
 
         if ci.stateText == "CONFIRMED":
-            # Ждём, пока медиа станет активной
             for _ in range(100):
                 if hasattr(self, '_audio_media') and self._audio_media is not None:
                     break
@@ -86,30 +72,17 @@ class Call(pj.Call):
                 print(f"[PJSUA] Ошибка при попытке проиграть аудиофайл: {e}")
 
     def play_wav(self, wav_path):
-        """
-        Воспроизведение WAV-файла абоненту
-        
-        Args:
-            wav_path: путь к файлу WAV для воспроизведения
-        """
         if not os.path.isfile(wav_path):
             print(f"[PJSUA] Файл для проигрывания не найден: {wav_path}")
             return False
             
         try:
-            # Останавливаем предыдущий плеер, если он существует
             if self._player:
                 self._player = None
-                
-            # Создаем новый плеер
             self._player = pj.AudioMediaPlayer()
             self._player.createPlayer(wav_path, pj.PJMEDIA_FILE_NO_LOOP)
-            
-            # Убеждаемся, что аудио-медиа доступно
             if not self._audio_media:
                 self._audio_media = pj.AudioMedia.typecastFromMedia(self.getMedia(0))
-                
-            # Начинаем передачу аудио
             self._player.startTransmit(self._audio_media)
             print(f"[PJSUA] Проигрывается файл: {wav_path}")
             return True
@@ -145,7 +118,6 @@ class Call(pj.Call):
             self._recorder.createRecorder(filename)
             self._audio_media = pj.AudioMedia.typecastFromMedia(self.getMedia(media_index))
             self._audio_media.startTransmit(self._recorder)
-            
             if self._stt_session:
                 self._stt_session.start_streaming()
         except Exception as e:

@@ -11,16 +11,15 @@ from crm.crm_api import AmoCRMClient
 from sip.utils import get_active_lead_id
 import asyncio
 import time
-from tts import tts_to_wav  # импортируем функцию TTS
+from tts import tts_to_wav
 import os
 
-# Настройка детального логирования
 logging.basicConfig(level=logging.INFO)
 
 _llm_agent_instance = None
-_llm_agent_tts_queue = None # Глобальная переменная для хранения очереди, используемой агентом
+_llm_agent_tts_queue = None
 
-def init_llm_agent_tts_queue(queue_instance): # Вызывается один раз из main
+def init_llm_agent_tts_queue(queue_instance):
     global _llm_agent_tts_queue
     _llm_agent_tts_queue = queue_instance
 
@@ -28,22 +27,14 @@ class LLMAgent:
     def __init__(self, instructions=SYSTEM_PROMPT, model=LLM, tts_playback_queue=None):
         self.instructions = instructions
         self.model = model
-        self.lock = asyncio.Lock()  # Асинхронный lock
-        self.history = []  # Список сообщений для контекста
+        self.lock = asyncio.Lock()
+        self.history = []
         self.stage_idx = 0
-        self.llm_busy = False  # Флаг занятости LLM
-        self.tts_playback_queue = tts_playback_queue # Очередь для TTS файлов
-        
-        # Хранение информации о вопросах
-        self.answered_fields = {}  # {field_id: {"value": value, "type": type}}
-        
-        # Загружаем enriched funnel config из кеша
+        self.llm_busy = False
+        self.tts_playback_queue = tts_playback_queue
+        self.answered_fields = {}
         self.funnel_stages = load_enriched_funnel_config()
-        
-        # Устанавливаем callback для инструментов
         set_remove_question_callback(self._mark_field_answered)
-        
-        # Создаем агента с инструментами
         self.agent = Agent(
             name="Valentin",
             instructions=self.instructions,
@@ -105,7 +96,6 @@ class LLMAgent:
         return '\n'.join(info)
 
     def _prepare_next_available_stage(self):
-        """Переходит к следующему этапу с вопросами или возвращает False, если все этапы завершены."""
         while not self.get_remaining_questions():
             if not self.next_stage():
                 return False
@@ -123,7 +113,6 @@ class LLMAgent:
                 print(f"[DEBUG][STT->LLM] Текущий этап: {self.stage_idx + 1} — {self.get_current_stage()['name']}")
                 print(f"[DEBUG][STT->LLM] Осталось вопросов: {len(self.get_remaining_questions())}")
                 
-                # Проверяем, есть ли вопросы на текущем этапе, если нет - переходим к следующему
                 if not self._prepare_next_available_stage():
                     print(f"[DEBUG][STT->LLM] Воронка завершена. Все вопросы заданы.")
                     return "Спасибо! Все этапы заполнены, менеджер свяжется с вами для уточнения деталей."
@@ -152,11 +141,10 @@ class LLMAgent:
                     llm_reply = result.final_output
                     print(f"[DEBUG][STT->LLM] Ответ LLM получен: {llm_reply}")
                     
-                    # --- TTS: озвучиваем ответ LLM и сохраняем в WAV ---
-                    tts_dir = None  # Используем RAM (/dev/shm) по умолчанию
+                    tts_dir = None
                     timestamp = int(time.time())
                     filename = f"reply_{timestamp}.wav"
-                    tts_file = None # Инициализируем tts_file
+                    tts_file = None
                     try:
                         tts_file = tts_to_wav(llm_reply, filename, output_dir=tts_dir)
                         print(f"[TTS] Аудиофайл сгенерирован: {tts_file}")
@@ -168,16 +156,10 @@ class LLMAgent:
                     except Exception as tts_err:
                         print(f"[TTS] Ошибка генерации аудио: {tts_err}")
                     
-                    if not self.history:
-                        self.history = result.to_input_list()
-                    else:
-                        self.history = result.to_input_list()
+                    self.history = result.to_input_list()
                     
-                    # После ответа LLM проверяем, остались ли вопросы
-                    # Если нет, готовим следующий этап, но не делаем новый запрос к LLM
                     if not self.get_remaining_questions():
                         if self._prepare_next_available_stage():
-                            # Добавляем к ответу информацию о переходе на новый этап
                             stage = self.get_current_stage()
                             transition_message = f"\n\nМы переходим к следующему этапу: {stage['name']}."
                             llm_reply += transition_message
@@ -193,7 +175,6 @@ class LLMAgent:
             finally:
                 self.llm_busy = False
 
-    # Для обратной совместимости (sync fallback)
     def process(self, user_text):
         loop = None
         try:
@@ -201,13 +182,10 @@ class LLMAgent:
         except RuntimeError:
             pass
         if loop and loop.is_running():
-            # Если уже есть event loop, запускаем асинхронно через create_task
             return asyncio.create_task(self.process_async(user_text))
         else:
-            # Если нет event loop, создаём новый
             return asyncio.run(self.process_async(user_text))
 
-# Singleton LLM-агент для всего приложения
 _llm_agent_instance = None
 
 def get_llm_agent():
@@ -223,9 +201,6 @@ async def process_transcript_async(transcript):
     return await agent.process_async(transcript)
 
 def process_transcript(transcript):
-    """
-    Синхронная обёртка для обратной совместимости.
-    """
     loop = None
     try:
         loop = asyncio.get_running_loop()

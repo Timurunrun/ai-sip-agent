@@ -5,11 +5,10 @@ import websockets
 import wave
 import json
 import logging
-from llm.agent import process_transcript, process_transcript_async  # импортируем функции для LLM
+from llm.agent import process_transcript, process_transcript_async
 import random
 import queue
 
-# Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
@@ -27,13 +26,6 @@ DEEPGRAM_API_KEY = os.getenv('DEEPGRAM_API_KEY')
 if not DEEPGRAM_API_KEY:
     logging.error('Не задан Deepgram API key в переменной DEEPGRAM_API_KEY')
     exit(1)
-
-# Глобальная очередь для воспроизведения интерьекций
-_tts_playback_queue = None
-
-def init_interjection_tts_queue(queue_instance):
-    global _tts_playback_queue
-    _tts_playback_queue = queue_instance
 
 class DeepgramSTTSession:
     def __init__(self, wav_file):
@@ -95,11 +87,9 @@ class DeepgramSTTSession:
                 full_text = ' '.join([b.strip() for b in buffer]).strip()
                 if full_text:
                     print(f"[STT] Расшифровка: {full_text}")
-                    # --- Отправляем в LLM и выводим ответ в отдельном потоке ---
                     def llm_thread():
                         import inspect
                         try:
-                            # Если process_transcript_async существует, используем его
                             if inspect.iscoroutinefunction(process_transcript_async):
                                 try:
                                     loop = asyncio.get_running_loop()
@@ -116,17 +106,6 @@ class DeepgramSTTSession:
                             llm_response = f"[LLM] Ошибка: {e}"
                         print(f"[LLM] Ответ: {llm_response}")
                     threading.Thread(target=llm_thread, daemon=True).start()
-                # --- Воспроизведение случайной интерьекции ---
-                try:
-                    interj_dir = os.path.join(os.path.dirname(__file__), '../tts/interjections')
-                    files = [f for f in os.listdir(interj_dir) if f.endswith('.wav')]
-                    if files and _tts_playback_queue:
-                        chosen = random.choice(files)
-                        abs_path = os.path.abspath(os.path.join(interj_dir, chosen))
-                        _tts_playback_queue.put(abs_path)
-                        print(f"[STT] В очередь на воспроизведение добавлен интерьекционный файл: {abs_path}")
-                except Exception as e:
-                    print(f"[STT] Ошибка при выборе интерьекции: {e}")
                 buffer = []
                 continue
             if 'channel' in data:
@@ -148,7 +127,7 @@ class DeepgramSTTSession:
             self.loop.run_until_complete(self._connect_ws())
         self.thread = threading.Thread(target=run, daemon=True)
         self.thread.start()
-        self.connected_event.wait()  # Ждём подключения
+        self.connected_event.wait()
         return self
 
     def start_streaming(self):
@@ -162,7 +141,6 @@ class DeepgramSTTSession:
         return t
 
     def close(self):
-        """Корректно завершает стриминг и закрывает WebSocket соединение с Deepgram."""
         if self.ws is None or self.loop is None:
             return
         async def _close_ws():
@@ -174,16 +152,11 @@ class DeepgramSTTSession:
                 logging.error(f"Ошибка при закрытии Deepgram WebSocket: {e}")
         try:
             if self.loop.is_running():
-                # Если event loop уже запущен, используем run_coroutine_threadsafe
                 fut = asyncio.run_coroutine_threadsafe(_close_ws(), self.loop)
-                # Можно не ждать завершения, но если нужно:
-                # fut.result(timeout=2)
             else:
                 self.loop.run_until_complete(_close_ws())
         except Exception as e:
             logging.error(f"Ошибка при завершении Deepgram STT: {e}")
-
-# Старый интерфейс для обратной совместимости
 
 def stt_from_wav(wav_file):
     session = DeepgramSTTSession(wav_file)
