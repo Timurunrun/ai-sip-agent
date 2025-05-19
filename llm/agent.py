@@ -5,7 +5,6 @@ import logging
 import json
 from llm.config_llm import SYSTEM_PROMPT, LLM
 from crm.crm_api import load_enriched_funnel_config
-from llm.tools import fill_crm_field, skip_crm_field, set_remove_question_callback
 from crm.status_config import STAGE_STATUS_IDS
 from crm.crm_api import AmoCRMClient
 from sip.utils import get_active_lead_id
@@ -19,136 +18,70 @@ _llm_agent_instance = None
 
 class LLMAgent:
     def __init__(self, instructions=SYSTEM_PROMPT, model=LLM):
-        self.instructions = instructions
+        self.funnel_stages = load_enriched_funnel_config()
+        questions = self.get_all_questions()
+        questions_text = '\n'.join(f'- {q}' for q in questions) if questions else '- нет вопросов'
+        system_prompt = f"{instructions}\n\n[Вопросы для пользователя:]\n{questions_text}"
+        self.instructions = system_prompt
         self.model = model
         self.lock = asyncio.Lock()
         self.history = []
-        self.stage_idx = 0
         self.llm_busy = False
-        self.answered_fields = {}
-        self.funnel_stages = load_enriched_funnel_config()
-        set_remove_question_callback(self._mark_field_answered)
         self.agent = Agent(
             name="Valentin",
             instructions=self.instructions,
-            model=self.model,
-            tools=[fill_crm_field, skip_crm_field]
+            model=self.model
         )
         logging.info("[LLM] Агент инициализирован")
 
-    def get_current_stage(self):
-        return self.funnel_stages[self.stage_idx]
-
-    def get_remaining_questions(self):
-        stage = self.get_current_stage()
-        remaining = []
-        for q in stage['questions']:
-            field_id = int(q['id'])
-            if field_id not in self.answered_fields:
-                remaining.append(q)
-        return remaining
-
-    def _mark_field_answered(self, field_id, field_type=None, value=None):
-        field_id = int(field_id)
-        self.answered_fields[field_id] = {
-            "type": field_type,
-            "value": value
-        }
-
-    def next_stage(self):
-        lead_id = get_active_lead_id()
-        client = AmoCRMClient()
-        next_stage_idx = self.stage_idx + 1
-        if lead_id and next_stage_idx < len(STAGE_STATUS_IDS):
-            status_id = STAGE_STATUS_IDS[next_stage_idx]
-            status, resp = client.update_lead_status(lead_id, status_id)
-            print(f"[CRM] Статус сделки обновлён: {status}, {resp}")
-        if self.stage_idx < len(self.funnel_stages) - 1:
-            self.stage_idx += 1
-            self.answered_fields = {}
-            print(f"[LLM] Переход к этапу {self.stage_idx + 1}: {self.get_current_stage()['name']}")
-            return True
-        return False
+    def get_all_questions(self):
+        questions = []
+        for stage in self.funnel_stages:
+            for q in stage['questions']:
+                questions.append(q.get('name', ''))
+        return questions
 
     def _system_info(self):
-        stage = self.get_current_stage()
-        remaining = self.get_remaining_questions()
-        info = [
-            '[Системная информация, прикрепляется автоматически]',
-            f'## Текущий этап: {self.stage_idx + 1} — {stage["name"]}',
-            'Данные, которые ещё не внесены в поля:'
-        ]
-        if remaining:
-            for q in remaining:
-                enums_str = ''
-                if q.get('enums'):
-                    enums_str = f" (варианты: {[e.get('value') for e in q['enums']]})"
-                info.append(f"- id={q['id']}, name={q.get('name')}, type={q.get('type')}: {q.get('comment', '')}{enums_str}")
-        else:
-            info.append('- нет')
-        return '\n'.join(info)
-
-    def _prepare_next_available_stage(self):
-        while not self.get_remaining_questions():
-            if not self.next_stage():
-                return False
-        return True
+        return ''
 
     async def process_async(self, user_text):
         if self.llm_busy:
-            print("[DEBUG][STT->LLM] LLM ещё не ответила, новый запрос игнорируется.")
             return "[LLM] Пожалуйста, дождитесь ответа на предыдущий вопрос."
-        
         async with self.lock:
             self.llm_busy = True
             try:
-                print(f"[DEBUG][STT->LLM] Получен текст: {user_text}")
-                print(f"[DEBUG][STT->LLM] Текущий этап: {self.stage_idx + 1} — {self.get_current_stage()['name']}")
-                print(f"[DEBUG][STT->LLM] Осталось вопросов: {len(self.get_remaining_questions())}")
-                
-                if not self._prepare_next_available_stage():
-                    print(f"[DEBUG][STT->LLM] Воронка завершена. Все вопросы заданы.")
-                    return "Спасибо! Все этапы заполнены, менеджер свяжется с вами для уточнения деталей."
-                
-                sys_info = self._system_info()
-                remaining = self.get_remaining_questions()
-                if remaining:
-                    names = ", ".join([q.get('name', 'Неизвестный') for q in remaining])
-                    print(f"[LLM] Осталось задать вопросы: {names}")
-                else:
-                    print("[LLM] Все вопросы на этапе заданы или пропущены.")
-                
-                user_message = f"{user_text}\n\n<<<\n{sys_info}\n>>>"
-                print(f"[DEBUG][STT->LLM] Формирую входные данные для LLM...")
-                
+                user_message = user_text
                 if not self.history:
                     input_data = user_message
                 else:
                     input_data = self.history + [{"role": "user", "content": user_message}]
-                
                 run_config = RunConfig(tracing_disabled=True)
-                
                 try:
-                    print(f"[DEBUG][STT->LLM] Запускаю LLM...")
-                    result = await Runner.run(self.agent, input_data, run_config=run_config)
-                    llm_reply = result.final_output
-                    print(f"[DEBUG][STT->LLM] Ответ LLM получен: {llm_reply}")
-                    
+                    # --- STREAMING ---
+                    result = Runner.run_streamed(self.agent, input_data, run_config=run_config)
+                    full_reply = ""
+                    async for event in result.stream_events():
+                        if event.type == "raw_response_event":
+                            data = getattr(event, 'data', None)
+                            if data and hasattr(data, 'delta'):
+                                print(data.delta, end="", flush=True)  # Реальный вывод токенов
+                                full_reply += data.delta
+                    # После стрима обновляем историю
                     self.history = result.to_input_list()
-                    
-                    if not self.get_remaining_questions():
-                        if self._prepare_next_available_stage():
-                            stage = self.get_current_stage()
-                            transition_message = f"\n\nМы переходим к следующему этапу: {stage['name']}."
-                            llm_reply += transition_message
-                        else:
-                            llm_reply += "\n\nСпасибо! Все этапы заполнены, менеджер свяжется с вами для уточнения деталей."
-                    
-                    return llm_reply
-                    
+                    # Логируем историю диалога
+                    log_lines = ["\n========== ТЕКУЩАЯ ИСТОРИЯ ДИАЛОГА =========="]
+                    for msg in self.history:
+                        role = msg.get('role', 'unknown').upper()
+                        content = msg.get('content', '')
+                        if isinstance(content, list):
+                            content = '\n'.join(str(x) for x in content)
+                        content = str(content).strip()
+                        log_lines.append(f"[{role}] {content}")
+                    log_lines.append("========== КОНЕЦ ИСТОРИИ ==========")
+                    logging.info("\n".join(log_lines))
+                    return full_reply
                 except Exception as e:
                     logging.error(f"[LLM] Ошибка при обработке: {str(e)}", exc_info=True)
-                    print(f"[DEBUG][STT->LLM] Произошла ошибка: {str(e)}")
                     return f"Произошла ошибка при обработке запроса: {str(e)}"
             finally:
                 self.llm_busy = False
