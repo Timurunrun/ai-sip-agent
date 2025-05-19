@@ -7,6 +7,7 @@ from sip.endpoint import create_endpoint
 from sip.account import Account
 from crm.crm_api import enrich_funnel_config_with_crm
 from llm.agent import init_llm_agent_tts_queue
+from stt.deepgram_stt import init_interjection_tts_queue
 
 def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
@@ -18,6 +19,7 @@ def main():
     
     tts_playback_queue = queue.Queue()
     init_llm_agent_tts_queue(tts_playback_queue)
+    init_interjection_tts_queue(tts_playback_queue)
     
     ep = None
     acc = None

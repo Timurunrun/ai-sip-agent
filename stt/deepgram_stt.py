@@ -6,6 +6,8 @@ import wave
 import json
 import logging
 from llm.agent import process_transcript, process_transcript_async  # импортируем функции для LLM
+import random
+import queue
 
 # Настройка логирования
 logging.basicConfig(
@@ -25,6 +27,13 @@ DEEPGRAM_API_KEY = os.getenv('DEEPGRAM_API_KEY')
 if not DEEPGRAM_API_KEY:
     logging.error('Не задан Deepgram API key в переменной DEEPGRAM_API_KEY')
     exit(1)
+
+# Глобальная очередь для воспроизведения интерьекций
+_tts_playback_queue = None
+
+def init_interjection_tts_queue(queue_instance):
+    global _tts_playback_queue
+    _tts_playback_queue = queue_instance
 
 class DeepgramSTTSession:
     def __init__(self, wav_file):
@@ -107,7 +116,18 @@ class DeepgramSTTSession:
                             llm_response = f"[LLM] Ошибка: {e}"
                         print(f"[LLM] Ответ: {llm_response}")
                     threading.Thread(target=llm_thread, daemon=True).start()
-                    buffer = []
+                # --- Воспроизведение случайной интерьекции ---
+                try:
+                    interj_dir = os.path.join(os.path.dirname(__file__), '../tts/interjections')
+                    files = [f for f in os.listdir(interj_dir) if f.endswith('.wav')]
+                    if files and _tts_playback_queue:
+                        chosen = random.choice(files)
+                        abs_path = os.path.abspath(os.path.join(interj_dir, chosen))
+                        _tts_playback_queue.put(abs_path)
+                        print(f"[STT] В очередь на воспроизведение добавлен интерьекционный файл: {abs_path}")
+                except Exception as e:
+                    print(f"[STT] Ошибка при выборе интерьекции: {e}")
+                buffer = []
                 continue
             if 'channel' in data:
                 if isinstance(data['channel'], dict):
