@@ -20,7 +20,6 @@ class Call(pj.Call):
         self._recording_filename = None
         self.lead_id = None
         self._player = None
-        self._bg_player = None
         Call.current = self
 
     def onCallState(self, prm):
@@ -71,12 +70,6 @@ class Call(pj.Call):
             # Корректно закрываем Deepgram STT сессию
             if self._stt_session:
                 self._stt_session.close()
-            # Останавливаем фоновый шум
-            if self._bg_player:
-                try:
-                    self._bg_player = None
-                except Exception as e:
-                    print(f"[PJSUA] Ошибка при освобождении фонового плеера: {e}")
             print("[PJSUA] Вызов завершен и ресурсы освобождены")
 
         if ci.stateText == "CONFIRMED":
@@ -135,22 +128,6 @@ class Call(pj.Call):
                 except Exception as e:
                     print(f"[PJSUA] Не удалось получить информацию о кодеке: {e}")
                 self.start_audio_streaming(mi.index)
-                
-                try:
-                    bg_wav = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'zvuki-razgovorov-i-raboty-v-ofise.wav'))
-                    if os.path.isfile(bg_wav):
-                        if self._bg_player:
-                            self._bg_player = None
-                        self._bg_player = pj.AudioMediaPlayer()
-                        self._bg_player.createPlayer(bg_wav, 0)  # 0 = loop
-                        if not self._audio_media:
-                            self._audio_media = pj.AudioMedia.typecastFromMedia(self.getMedia(mi.index))
-                        self._bg_player.startTransmit(self._audio_media)
-                        print(f"[PJSUA] Фоновый шум запущен: {bg_wav}")
-                    else:
-                        print(f"[PJSUA] Файл фонового шума не найден: {bg_wav}")
-                except Exception as e:
-                    print(f"[PJSUA] Ошибка при запуске фонового шума: {e}")
 
     def connect_stt_session(self, filename):
         self._recording_filename = filename

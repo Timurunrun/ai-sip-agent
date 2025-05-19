@@ -5,6 +5,5 @@ openai-agents
 deepgram-sdk>=0.3.0
 websockets
 pyaudio
-weave
 dotenv
 websockets

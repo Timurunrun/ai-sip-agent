@@ -9,17 +9,10 @@ from llm.tools import fill_crm_field, skip_crm_field, set_remove_question_callba
 from crm.status_config import STAGE_STATUS_IDS
 from crm.crm_api import AmoCRMClient
 from sip.utils import get_active_lead_id
-import weave
-from weave.integrations.openai_agents.openai_agents import WeaveTracingProcessor
-from agents import set_trace_processors
 import asyncio
 import time
 from tts import tts_to_wav  # импортируем функцию TTS
 import os
-
-# Инициализация Weave
-weave.init("pjsua-agent-tracing")
-set_trace_processors([WeaveTracingProcessor()])
 
 # Настройка детального логирования
 logging.basicConfig(level=logging.INFO)
@@ -151,7 +144,7 @@ class LLMAgent:
                 else:
                     input_data = self.history + [{"role": "user", "content": user_message}]
                 
-                run_config = RunConfig(tracing_disabled=False)
+                run_config = RunConfig(tracing_disabled=True)
                 
                 try:
                     print(f"[DEBUG][STT->LLM] Запускаю LLM...")
