@@ -8,6 +8,7 @@ import logging
 from llm.agent import process_transcript, process_transcript_async
 import random
 import queue
+import time
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,6 +38,7 @@ class DeepgramSTTSession:
         self.connected_event = threading.Event()
         self._send_task = None
         self._recv_task = None
+        self._last_utterance_end_time = None
 
     async def _connect_ws(self):
         url = (
@@ -83,12 +85,14 @@ class DeepgramSTTSession:
                 continue
             if 'type' in data and data['type'] == 'UtteranceEnd':
                 last_word_end = data.get('last_word_end', 0)
-                print(f"[UTTERANCE END] Конец речи в {last_word_end}s")
+                self._last_utterance_end_time = time.time()
+                print(f"[UTTERANCE END] Конец речи в {last_word_end}s (ts={self._last_utterance_end_time:.3f})")
                 full_text = ' '.join([b.strip() for b in buffer]).strip()
                 if full_text:
                     print(f"[STT] Расшифровка: {full_text}")
                     def llm_thread():
                         import inspect
+                        import time as _time
                         try:
                             if inspect.iscoroutinefunction(process_transcript_async):
                                 try:
@@ -104,7 +108,13 @@ class DeepgramSTTSession:
                                 llm_response = process_transcript(full_text)
                         except Exception as e:
                             llm_response = f"[LLM] Ошибка: {e}"
-                        print(f"[LLM] Ответ: {llm_response}")
+                        delay_ms = None
+                        if self._last_utterance_end_time:
+                            delay_ms = int((_time.time() - self._last_utterance_end_time) * 1000)
+                        if delay_ms is not None:
+                            print(f"[LLM] Ответ: {llm_response} (задержка {delay_ms} мс)")
+                        else:
+                            print(f"[LLM] Ответ: {llm_response}")
                     threading.Thread(target=llm_thread, daemon=True).start()
                 buffer = []
                 continue

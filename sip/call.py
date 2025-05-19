@@ -64,31 +64,7 @@ class Call(pj.Call):
                 if hasattr(self, '_audio_media') and self._audio_media is not None:
                     break
                 time.sleep(0.05)
-            try:
-                time.sleep(2)
-                wav_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'start_fixed.wav'))
-                self.play_wav(wav_path)
-            except Exception as e:
-                print(f"[PJSUA] Ошибка при попытке проиграть аудиофайл: {e}")
-
-    def play_wav(self, wav_path):
-        if not os.path.isfile(wav_path):
-            print(f"[PJSUA] Файл для проигрывания не найден: {wav_path}")
-            return False
-            
-        try:
-            if self._player:
-                self._player = None
-            self._player = pj.AudioMediaPlayer()
-            self._player.createPlayer(wav_path, pj.PJMEDIA_FILE_NO_LOOP)
-            if not self._audio_media:
-                self._audio_media = pj.AudioMedia.typecastFromMedia(self.getMedia(0))
-            self._player.startTransmit(self._audio_media)
-            print(f"[PJSUA] Проигрывается файл: {wav_path}")
-            return True
-        except Exception as e:
-            print(f"[PJSUA] Ошибка при воспроизведении аудиофайла: {e}")
-            return False
+            print("[PJSUA] Соединение установлено!")
 
     def onCallMediaState(self, prm):
         ci = self.getInfo()

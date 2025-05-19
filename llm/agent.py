@@ -11,27 +11,20 @@ from crm.crm_api import AmoCRMClient
 from sip.utils import get_active_lead_id
 import asyncio
 import time
-from tts import tts_to_wav
 import os
 
 logging.basicConfig(level=logging.INFO)
 
 _llm_agent_instance = None
-_llm_agent_tts_queue = None
-
-def init_llm_agent_tts_queue(queue_instance):
-    global _llm_agent_tts_queue
-    _llm_agent_tts_queue = queue_instance
 
 class LLMAgent:
-    def __init__(self, instructions=SYSTEM_PROMPT, model=LLM, tts_playback_queue=None):
+    def __init__(self, instructions=SYSTEM_PROMPT, model=LLM):
         self.instructions = instructions
         self.model = model
         self.lock = asyncio.Lock()
         self.history = []
         self.stage_idx = 0
         self.llm_busy = False
-        self.tts_playback_queue = tts_playback_queue
         self.answered_fields = {}
         self.funnel_stages = load_enriched_funnel_config()
         set_remove_question_callback(self._mark_field_answered)
@@ -141,21 +134,6 @@ class LLMAgent:
                     llm_reply = result.final_output
                     print(f"[DEBUG][STT->LLM] Ответ LLM получен: {llm_reply}")
                     
-                    tts_dir = None
-                    timestamp = int(time.time())
-                    filename = f"reply_{timestamp}.wav"
-                    tts_file = None
-                    try:
-                        tts_file = tts_to_wav(llm_reply, filename, output_dir=tts_dir)
-                        print(f"[TTS] Аудиофайл сгенерирован: {tts_file}")
-                        if self.tts_playback_queue and tts_file:
-                            self.tts_playback_queue.put(tts_file)
-                            print(f"[LLM] Файл {tts_file} добавлен в очередь на воспроизведение.")
-                        elif not self.tts_playback_queue:
-                            logging.warning("[LLM] TTS playback queue не настроена. Аудио не будет воспроизведено.")
-                    except Exception as tts_err:
-                        print(f"[TTS] Ошибка генерации аудио: {tts_err}")
-                    
                     self.history = result.to_input_list()
                     
                     if not self.get_remaining_questions():
@@ -191,9 +169,7 @@ _llm_agent_instance = None
 def get_llm_agent():
     global _llm_agent_instance
     if _llm_agent_instance is None:
-        if _llm_agent_tts_queue is None:
-            logging.warning("LLM Agent TTS queue не инициализирована до первого использования! TTS playback не будет работать.")
-        _llm_agent_instance = LLMAgent(tts_playback_queue=_llm_agent_tts_queue)
+        _llm_agent_instance = LLMAgent()
     return _llm_agent_instance
 
 async def process_transcript_async(transcript):
