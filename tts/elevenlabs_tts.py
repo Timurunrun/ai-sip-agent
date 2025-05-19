@@ -51,9 +51,9 @@ class ElevenLabsTTSSession:
             "text": text,
             "model_id": "eleven_flash_v2_5",
             "voice_settings": {
-                "speed": 1.1,
-                "stability": 0.35,
-                "similarity_boost": 0.65,
+                "speed": 1.11,
+                "stability": 0.4,
+                "similarity_boost": 0.7,
             }
         }
         response = requests.post(self.url, headers=self.headers, json=payload, stream=True)
