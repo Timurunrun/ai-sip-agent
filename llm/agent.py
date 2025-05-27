@@ -25,13 +25,15 @@ class LLMAgent:
         self.instructions = system_prompt
         self.model = model
         self.lock = asyncio.Lock()
-        self.history = []
         self.llm_busy = False
         self.agent = Agent(
             name="Valentin",
             instructions=self.instructions,
             model=self.model
         )
+        # Создаем папку для истории диалогов если её нет
+        self.history_dir = os.path.join(os.path.dirname(__file__), '..', 'dialog_history')
+        os.makedirs(self.history_dir, exist_ok=True)
         logging.info("[LLM] Агент инициализирован")
 
     def get_all_questions(self):
@@ -41,20 +43,67 @@ class LLMAgent:
                 questions.append(q.get('name', ''))
         return questions
 
+    def _get_history_file_path(self, lead_id):
+        """Возвращает путь к файлу истории для конкретного лида"""
+        if not lead_id:
+            return None
+        return os.path.join(self.history_dir, f"lead_{lead_id}_history.json")
+
+    def _load_history(self, lead_id):
+        """Загружает историю диалога для конкретного лида"""
+        if not lead_id:
+            return []
+        
+        history_file = self._get_history_file_path(lead_id)
+        if not os.path.exists(history_file):
+            return []
+        
+        try:
+            with open(history_file, 'r', encoding='utf-8') as f:
+                history = json.load(f)
+                logging.info(f"[LLM] Загружена история для лида {lead_id}: {len(history)} сообщений")
+                return history
+        except Exception as e:
+            logging.error(f"[LLM] Ошибка загрузки истории для лида {lead_id}: {e}")
+            return []
+
+    def _save_history(self, lead_id, history):
+        """Сохраняет историю диалога для конкретного лида"""
+        if not lead_id:
+            return
+        
+        history_file = self._get_history_file_path(lead_id)
+        try:
+            with open(history_file, 'w', encoding='utf-8') as f:
+                json.dump(history, f, ensure_ascii=False, indent=2)
+                logging.info(f"[LLM] Сохранена история для лида {lead_id}: {len(history)} сообщений")
+        except Exception as e:
+            logging.error(f"[LLM] Ошибка сохранения истории для лида {lead_id}: {e}")
+
     def _system_info(self):
         return ''
 
     async def process_async(self, user_text):
         if self.llm_busy:
             return "[LLM] Пожалуйста, дождитесь ответа на предыдущий вопрос."
+        
+        # Получаем ID активного лида
+        lead_id = get_active_lead_id()
+        if not lead_id:
+            logging.warning("[LLM] Не удалось получить ID активного лида, используем общую историю")
+        
         async with self.lock:
             self.llm_busy = True
             try:
+                # Загружаем историю для конкретного лида
+                history = self._load_history(lead_id) if lead_id else []
+                
                 user_message = user_text
-                if not self.history:
+                if not history:
                     input_data = user_message
                 else:
-                    input_data = self.history + [{"role": "user", "content": user_message}]
+                    input_data = history + [{"role": "user", "content": user_message}]
+                
                 run_config = RunConfig(tracing_disabled=True)
                 try:
                     # --- STREAMING ---
@@ -66,11 +115,14 @@ class LLMAgent:
                             if data and hasattr(data, 'delta'):
                                 print(data.delta, end="", flush=True)  # Реальный вывод токенов
                                 full_reply += data.delta
-                    # После стрима обновляем историю
-                    self.history = result.to_input_list()
+                    
+                    # После стрима обновляем и сохраняем историю для конкретного лида
+                    updated_history = result.to_input_list()
+                    self._save_history(lead_id, updated_history)
+                    
                     # Логируем историю диалога
-                    log_lines = ["\n========== ТЕКУЩАЯ ИСТОРИЯ ДИАЛОГА =========="]
-                    for msg in self.history:
+                    log_lines = [f"\n========== ИСТОРИЯ ДИАЛОГА ЛИДА {lead_id or 'UNKNOWN'} =========="]
+                    for msg in updated_history:
                         role = msg.get('role', 'unknown').upper()
                         content = msg.get('content', '')
                         if isinstance(content, list):

@@ -72,6 +72,9 @@ desktop.ini
 # Recordings
 recordings/
 
+# Dialog history
+dialog_history/
+
 # TTS
 tts/generated/
 
