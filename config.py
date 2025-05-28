@@ -11,7 +11,7 @@ def load_config():
         'SIP_PASSWD': os.getenv('SIP_PASSWD'),
         'SIP_DOMAIN': os.getenv('SIP_DOMAIN'),
         'SIP_PROXY': os.getenv('SIP_PROXY'),
-        'OPENAI_API_KEY': os.getenv('OPENAI_API_KEY'),
+        'GROQ_API_KEY': os.getenv('GROQ_API_KEY'),
         'DEEPGRAM_API_KEY': os.getenv('DEEPGRAM_API_KEY'),
     }
     missing = [k for k, v in config.items() if not v and k != 'SIP_PROXY']

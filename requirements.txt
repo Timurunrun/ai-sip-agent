@@ -1,9 +1,8 @@
 pjsua2
 websocket-client
 python-dotenv
-openai-agents
+groq
 deepgram-sdk>=0.3.0
 websockets
 pyaudio
 dotenv
-websockets
