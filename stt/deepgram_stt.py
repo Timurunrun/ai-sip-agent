@@ -18,7 +18,7 @@ logging.basicConfig(
 
 RATE = 16000
 CHANNELS = 1
-CHUNK = 4096
+CHUNK = 1600
 
 from dotenv import load_dotenv
 load_dotenv()
