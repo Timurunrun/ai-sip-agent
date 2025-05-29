@@ -18,7 +18,7 @@ logging.basicConfig(
 
 RATE = 16000
 CHANNELS = 1
-CHUNK = 1024
+CHUNK = 4096
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -47,9 +47,8 @@ class DeepgramSTTSession:
             f"&sample_rate={RATE}"
             f"&channels={CHANNELS}"
             f"&interim_results=true"
-            f"&punctuate=true"
+            # f"&punctuate=true"
             f"&utterance_end_ms=1000"
-            f"&endpointing=300"
             f"&vad_events=true"
             f"&language=ru"
             f"&model=nova-2"
@@ -65,14 +64,19 @@ class DeepgramSTTSession:
         with open(self.wav_file, 'rb') as f_read:
             f_read.seek(44)
             position = 44
+            no_data_count = 0
             while not self.stop_event.is_set():
                 f_read.seek(position)
                 chunk = f_read.read(CHUNK * 2)
                 if chunk:
                     await self.ws.send(chunk)
                     position += len(chunk)
+                    no_data_count = 0
                 else:
-                    await asyncio.sleep(0.1)
+                    no_data_count += 1
+                    # Динамическая задержка для увеличения скорости (начинаем с малой, увеличиваем при отсутствии данных)
+                    delay = min(0.02 + (no_data_count * 0.01), 0.1)
+                    await asyncio.sleep(delay)
             await self.ws.send(json.dumps({"type": "CloseStream"}))
 
     async def _receive_loop(self):
