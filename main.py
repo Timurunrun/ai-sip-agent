@@ -38,12 +38,14 @@ def main():
         import time
         while True:
             try:
-                pass
+                # Проверяем отложенное воспроизведение аудио в текущем звонке
+                if hasattr(sip_event_queue, 'current_call') and sip_event_queue.current_call:
+                    sip_event_queue.current_call.check_pending_audio()
             except queue.Empty:
                 pass
             except Exception as e:
                 pass
-            time.sleep(0.05)
+            time.sleep(0.1)
 
     except KeyboardInterrupt:
         logging.info("Выход из программы...")
