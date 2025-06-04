@@ -117,9 +117,9 @@ class DeepgramSTTSession:
                         if self._last_utterance_end_time:
                             delay_ms = int((_time.time() - self._last_utterance_end_time) * 1000)
                         if delay_ms is not None:
-                            print(f"[LLM] Ответ: {llm_response} (задержка {delay_ms} мс)")
+                            logging.info(f"[LLM] Ответ готов (задержка {delay_ms} мс)")
                         else:
-                            print(f"[LLM] Ответ: {llm_response}")
+                            logging.info(f"[LLM] Ответ готов")
                     threading.Thread(target=llm_thread, daemon=True).start()
                 buffer = []
                 continue

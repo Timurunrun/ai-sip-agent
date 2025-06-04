@@ -13,8 +13,9 @@ def load_config():
         'SIP_PROXY': os.getenv('SIP_PROXY'),
         'GROQ_API_KEY': os.getenv('GROQ_API_KEY'),
         'DEEPGRAM_API_KEY': os.getenv('DEEPGRAM_API_KEY'),
+        'ELEVENLABS_API_KEY': os.getenv('ELEVENLABS_API_KEY'),
     }
-    missing = [k for k, v in config.items() if not v and k != 'SIP_PROXY']
+    missing = [k for k, v in config.items() if not v and k not in ['SIP_PROXY']]
     if missing:
         raise ConfigError(f"Отсутствуют значения конфигурации: {', '.join(missing)}")
     return config

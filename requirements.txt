@@ -6,3 +6,4 @@ deepgram-sdk>=0.3.0
 websockets
 pyaudio
 dotenv
+requests

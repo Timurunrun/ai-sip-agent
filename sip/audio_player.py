@@ -7,7 +7,57 @@
 
 import os
 import logging
+import queue
+import threading
 from .call import Call
+
+# Глобальная очередь для безопасной передачи аудиофайлов между потоками
+_audio_queue = queue.Queue()
+_queue_lock = threading.Lock()
+
+
+def queue_audio_for_playback(audio_file_path):
+    """
+    Добавляет аудиофайл в очередь для воспроизведения.
+    Безопасно вызывать из любого потока.
+    
+    Args:
+        audio_file_path (str): Путь к аудиофайлу
+    """
+    try:
+        _audio_queue.put(audio_file_path, block=False)
+        logging.info(f"[AUDIO] Файл добавлен в очередь: {os.path.basename(audio_file_path)}")
+    except queue.Full:
+        logging.error("[AUDIO] Очередь воспроизведения переполнена")
+
+
+def process_audio_queue():
+    """
+    Обрабатывает очередь аудиофайлов для воспроизведения.
+    ДОЛЖНА вызываться только из основного потока PJSUA!
+    
+    Returns:
+        bool: True если был обработан хотя бы один файл
+    """
+    processed = False
+    
+    try:
+        while not _audio_queue.empty():
+            try:
+                audio_file_path = _audio_queue.get_nowait()
+                success = play_audio_to_current_call(audio_file_path)
+                if success:
+                    logging.info(f"[AUDIO] Воспроизведение началось: {os.path.basename(audio_file_path)}")
+                    processed = True
+                else:
+                    logging.error(f"[AUDIO] Не удалось воспроизвести: {audio_file_path}")
+                _audio_queue.task_done()
+            except queue.Empty:
+                break
+    except Exception as e:
+        logging.error(f"[AUDIO] Ошибка при обработке очереди: {e}")
+    
+    return processed
 
 
 def play_audio_to_current_call(audio_file_path, loop=False):

@@ -9,6 +9,7 @@ from groq import Groq
 from llm.config_llm import SYSTEM_PROMPT, LLM
 from crm.crm_api import load_enriched_funnel_config
 from sip.utils import get_active_lead_id
+from tts.elevenlabs_tts import text_to_speech_async
 
 logging.basicConfig(level=logging.INFO)
 
@@ -108,7 +109,9 @@ class GroqAgent:
                     )
                     
                     full_reply = response.choices[0].message.content
-                    print(full_reply)
+                    
+                    # Отправляем реплику в TTS и на воспроизведение
+                    self._send_to_tts_and_play(full_reply)
                     
                     history.append({"role": "assistant", "content": full_reply})
                     self._save_history(lead_id, history)
@@ -131,6 +134,25 @@ class GroqAgent:
             log_lines.append(f"[{role}] {content}")
         log_lines.append("========== КОНЕЦ ИСТОРИИ ==========")
         logging.info("\n".join(log_lines))
+
+    def _send_to_tts_and_play(self, text: str) -> None:
+        """
+        Отправляет текст в TTS и добавляет аудиофайл в очередь для воспроизведения
+        """
+        logging.info(f"[GROQ->TTS] Отправляем в TTS: {text}")
+        
+        def tts_callback(audio_filepath: Optional[str]) -> None:
+            if audio_filepath and os.path.exists(audio_filepath):
+                logging.info(f"[TTS] Аудиофайл готов: {audio_filepath}")
+                # Добавляем файл в очередь воспроизведения (безопасно из любого потока)
+                from sip.audio_player import queue_audio_for_playback
+                queue_audio_for_playback(audio_filepath)
+                logging.info(f"[TTS] Файл добавлен в очередь: {os.path.basename(audio_filepath)}")
+            else:
+                logging.error("[TTS] Не удалось создать аудиофайл")
+        
+        # Асинхронно создаем аудио и добавляем в очередь
+        text_to_speech_async(text, tts_callback)
 
     def process(self, user_text: str):
         loop = None

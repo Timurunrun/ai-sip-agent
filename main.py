@@ -38,8 +38,13 @@ def main():
         import time
         while True:
             try:
-                # Проверяем отложенное воспроизведение аудио в текущем звонке
+                # Обрабатываем очередь аудиофайлов для воспроизведения
                 if hasattr(sip_event_queue, 'current_call') and sip_event_queue.current_call:
+                    # Импортируем функцию обработки очереди
+                    from sip.audio_player import process_audio_queue
+                    process_audio_queue()
+                    
+                    # Проверяем отложенное воспроизведение аудио в текущем звонке
                     sip_event_queue.current_call.check_pending_audio()
             except queue.Empty:
                 pass
