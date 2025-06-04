@@ -1,6 +1,7 @@
 import threading
 import os
 import time
+import wave
 import pjsua2 as pj
 from stt.deepgram_stt import stt_from_wav, DeepgramSTTSession
 from sip.utils import get_active_lead_id
@@ -24,6 +25,7 @@ class Call(pj.Call):
         self._welcome_start_time = 0
         self._player_start_time = 0
         self._max_playback_duration = 30
+        self._current_audio_duration = 0  # Длительность текущего файла
         Call.current = self
 
     def onCallState(self, prm):
@@ -56,10 +58,12 @@ class Call(pj.Call):
                             self._player.stopTransmit(self._audio_media)
                         self._player = None
                         self._player_start_time = 0
+                        self._current_audio_duration = 0
                     except Exception as e:
                         print(f"[PJSUA] Ошибка при освобождении плеера: {e}")
                         self._player = None  # Принудительно очищаем
                         self._player_start_time = 0
+                        self._current_audio_duration = 0
             except Exception as e:
                 print(f"[PJSUA] Ошибка при освобождении медиа ресурсов: {e}")
             if hasattr(self.acc.sip_event_queue, 'current_call'):
@@ -93,10 +97,21 @@ class Call(pj.Call):
         self._stt_session = DeepgramSTTSession(filename)
         self._stt_session.connect()
 
+    def _get_audio_duration(self, audio_file_path):
+        try:
+            with wave.open(audio_file_path, 'rb') as wav_file:
+                frames = wav_file.getnframes()
+                sample_rate = wav_file.getframerate()
+                duration = frames / float(sample_rate)
+                return duration
+        except Exception as e:
+            print(f"[AUDIO] Не удалось определить длительность файла {audio_file_path}: {e}")
+            return 0
+
     def check_pending_audio(self):
         """
         Проверяет и воспроизводит отложенное аудио.
-        Также проверяет таймаут воспроизведения.
+        Также проверяет естественное окончание воспроизведения.
         Должен вызываться из основного потока.
         """
         try:
@@ -109,11 +124,19 @@ class Call(pj.Call):
                 else:
                     print(f"[AUDIO] Приветственный файл не найден: {welcome_file}")
             
-            # Проверка таймаута воспроизведения
-            if (self._player and self._player_start_time > 0 and 
-                time.time() - self._player_start_time > self._max_playback_duration):
-                print(f"[AUDIO] Принудительная остановка воспроизведения по таймауту ({self._max_playback_duration}с)")
-                self.stop_audio_playback()
+            # Проверка окончания воспроизведения
+            if (self._player and self._player_start_time > 0):
+                elapsed_time = time.time() - self._player_start_time
+                
+                # Сначала проверяем естественное окончание по длительности файла
+                if (self._current_audio_duration > 0 and 
+                    elapsed_time >= self._current_audio_duration + 0.5):  # +0.5с буфер
+                    print(f"[AUDIO] Воспроизведение завершено естественным образом ({self._current_audio_duration:.1f}с)")
+                    self.stop_audio_playback()
+                # Затем проверяем таймаут как запасной вариант
+                elif elapsed_time > self._max_playback_duration:
+                    print(f"[AUDIO] Принудительная остановка воспроизведения по таймауту ({self._max_playback_duration}с)")
+                    self.stop_audio_playback()
                 
         except Exception as e:
             print(f"[AUDIO] Ошибка в check_pending_audio: {e}")
@@ -121,15 +144,7 @@ class Call(pj.Call):
     def play_audio_file(self, audio_file_path, loop=False):
         """
         Универсальный метод для воспроизведения аудиофайла абоненту.
-        
-        Принципы реализации:
-        - Стабильность: проверка состояния звонка и ресурсов
-        - Качество: обработка ошибок и логирование
-        - Удобство: простой интерфейс с одним обязательным параметром
-        - Асинхронность: неблокирующее выполнение
-        - Лаконичность: минимум кода для достижения цели
-        - Скорость: быстрая инициализация плеера
-        
+
         Args:
             audio_file_path (str): Путь к аудиофайлу
             loop (bool): Зацикливать ли воспроизведение
@@ -158,6 +173,9 @@ class Call(pj.Call):
                 except Exception as e:
                     print(f"[AUDIO] Предупреждение при остановке предыдущего плеера: {e}")
             
+            # Определяем длительность файла перед воспроизведением
+            self._current_audio_duration = self._get_audio_duration(audio_file_path)
+            
             # Создание и запуск нового плеера
             self._player = pj.AudioMediaPlayer()
             self._player.createPlayer(audio_file_path, pj.PJMEDIA_FILE_NO_LOOP if not loop else 0)
@@ -166,7 +184,8 @@ class Call(pj.Call):
             self._player.startTransmit(self._audio_media)
             self._player_start_time = time.time()  # Запоминаем время начала
             
-            print(f"[AUDIO] Воспроизведение началось: {os.path.basename(audio_file_path)}")
+            duration_info = f" (длительность: {self._current_audio_duration:.1f}с)" if self._current_audio_duration > 0 else ""
+            print(f"[AUDIO] Воспроизведение началось: {os.path.basename(audio_file_path)}{duration_info}")
             return True
             
         except Exception as e:
@@ -190,12 +209,14 @@ class Call(pj.Call):
                 self._player.stopTransmit(self._audio_media)
             self._player = None
             self._player_start_time = 0  # Сбрасываем время
+            self._current_audio_duration = 0  # Сбрасываем длительность
             print("[AUDIO] Воспроизведение остановлено")
             return True
         except Exception as e:
             print(f"[AUDIO] Ошибка при остановке воспроизведения: {e}")
             self._player = None  # Принудительно очищаем даже при ошибке
             self._player_start_time = 0
+            self._current_audio_duration = 0
             return False
 
     def start_audio_streaming(self, media_index):
