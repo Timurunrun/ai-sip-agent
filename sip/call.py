@@ -21,8 +21,6 @@ class Call(pj.Call):
         self._recording_filename = None
         self.lead_id = None
         self._player = None
-        self._welcome_pending = False
-        self._welcome_start_time = 0
         self._player_start_time = 0
         self._max_playback_duration = 30
         self._current_audio_duration = 0  # Длительность текущего файла
@@ -110,20 +108,10 @@ class Call(pj.Call):
 
     def check_pending_audio(self):
         """
-        Проверяет и воспроизводит отложенное аудио.
-        Также проверяет естественное окончание воспроизведения.
+        Проверяет естественное окончание воспроизведения.
         Должен вызываться из основного потока.
         """
         try:
-            # Проверка отложенного воспроизведения
-            if self._welcome_pending and time.time() >= self._welcome_start_time:
-                self._welcome_pending = False
-                welcome_file = os.path.join(os.path.dirname(__file__), '..', 'ElevenLabs_Text_to_Speech_audio.wav')
-                if os.path.exists(welcome_file):
-                    self.play_audio_file(welcome_file)
-                else:
-                    print(f"[AUDIO] Приветственный файл не найден: {welcome_file}")
-            
             # Проверка окончания воспроизведения
             if (self._player and self._player_start_time > 0):
                 elapsed_time = time.time() - self._player_start_time
@@ -232,11 +220,6 @@ class Call(pj.Call):
             self._audio_media.startTransmit(self._recorder)
             if self._stt_session:
                 self._stt_session.start_streaming()
-                
-            # Запланируем воспроизведение приветственного аудиофайла
-            # Используем флаг для отложенного запуска в основном потоке
-            self._welcome_pending = True
-            self._welcome_start_time = time.time() + 0.5  # Задержка 0.5 сек
             
         except Exception as e:
             print(f"[PJSUA] Ошибка при инициализации аудио: {e}")
