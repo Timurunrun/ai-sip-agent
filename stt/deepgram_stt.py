@@ -47,7 +47,6 @@ class DeepgramSTTSession:
             f"&sample_rate={RATE}"
             f"&channels={CHANNELS}"
             f"&interim_results=true"
-            f"&punctuate=true"
             f"&endpointing=100"
             f"&utterance_end_ms=1000"
             f"&vad_events=true"
