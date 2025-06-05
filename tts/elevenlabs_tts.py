@@ -23,7 +23,7 @@ class ElevenLabsTTS:
             
         logging.info(f"[TTS] ElevenLabs TTS инициализирован с voice_id: {self.voice_id}")
 
-    def text_to_speech(self, text: str, output_format: str = "mp3_44100_128") -> Optional[str]:
+    def text_to_speech(self, text: str, output_format: str = "mp3_44100_32") -> Optional[str]:
         """
         Преобразует текст в аудио через ElevenLabs API
         
@@ -48,15 +48,18 @@ class ElevenLabsTTS:
         # Используем параметры для максимальной скорости
         params = {
             "output_format": output_format,
-            "optimize_streaming_latency": 3
+            "optimize_streaming_latency": 4
         }
         
         data = {
             "text": text,
             "model_id": self.model_id,
             "voice_settings": {
-                "stability": 0.4,
+                "stability": 0.6,
                 "speed": 1.07,
+                "similarity_boost": 0.9,
+                "style": 0,
+                "use_speaker_boost": False,
             }
         }
         

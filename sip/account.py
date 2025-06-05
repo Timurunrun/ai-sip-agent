@@ -7,6 +7,11 @@ from crm.status_config import STAGE_STATUS_IDS
 import uuid
 import os
 import time
+from pathlib import Path
+
+# Создаем папку для временных файлов записей
+TMP_RECORDINGS_DIR = Path("/tmp/pjsua_recordings")
+TMP_RECORDINGS_DIR.mkdir(exist_ok=True)
 
 class Account(pj.Account):
     def __init__(self, sip_event_queue, transcript_queue=None):
@@ -67,8 +72,8 @@ class Account(pj.Account):
             
             # 2. Принять вызов
             timestamp = int(time.time())
-            filename = os.path.join('recordings', f"call_{timestamp}.wav")
-            call.connect_stt_session(filename)
+            filename = TMP_RECORDINGS_DIR / f"call_{timestamp}.wav"
+            call.connect_stt_session(str(filename))
 
             call_prm = pj.CallOpParam()
             call_prm.statusCode = 200

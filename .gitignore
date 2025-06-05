@@ -69,15 +69,11 @@ venv.bak/
 Thumbs.db
 desktop.ini
 
-# Recordings
-recordings/
-
-# Dialog history
-dialog_history/
-
-# TTS
-tts/generated/
+# Temporary files
 /tmp/pjsua_tts/
+/tmp/pjsua_recordings/
+
+dialog_history/
 
 # Logs
 *.log
