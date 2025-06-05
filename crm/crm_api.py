@@ -217,3 +217,81 @@ def enrich_funnel_config_with_crm():
         json.dump(enriched_stages, f, ensure_ascii=False, indent=2)
     print(f"[CRM_SYNC] Enriched funnel config сохранён в {os.path.abspath(ENRICHED_CONFIG_PATH)}")
     return enriched_stages
+
+# --- ENRICH POST FUNNEL CONFIG WITH CRM FIELDS ---
+from llm.post_funnel_config import FUNNEL_STAGES as POST_FUNNEL_STAGES
+ENRICHED_POST_CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'enriched_post_funnel_config.json')
+
+def load_enriched_post_funnel_config():
+    """
+    Загружает enriched post funnel config из enriched_post_funnel_config.json
+    """
+    try:
+        with open(ENRICHED_POST_CONFIG_PATH, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        raise RuntimeError(f"Не удалось загрузить enriched post funnel config из файла: {e}")
+
+def enrich_post_funnel_config_with_crm():
+    """
+    Возвращает enriched post funnel config: список этапов, где каждый вопрос содержит id, comment, name, type, enums (если есть).
+    Также сохраняет результат в enriched_post_funnel_config.json (перезаписывает при каждом запуске).
+    """
+    client = AmoCRMClient()
+    print('[CRM_SYNC] Получаем поля AmoCRM через API для постобработки...')
+    crm_fields = client.get_lead_custom_fields()
+    if not crm_fields or '_embedded' not in crm_fields or 'custom_fields' not in crm_fields['_embedded']:
+        raise RuntimeError("Не удалось получить список полей AmoCRM для постобработки!")
+    
+    crm_fields_map = {}
+    for f in crm_fields['_embedded']['custom_fields']:
+        crm_fields_map[f['id']] = {
+            'name': f.get('name'),
+            'type': f.get('type'),
+            'enums': f.get('enums') if 'enums' in f else None
+        }
+    
+    enriched_stages = []
+    total_questions = 0
+    enriched_questions_count = 0
+    skipped_questions_count = 0
+    
+    for stage in POST_FUNNEL_STAGES:
+        enriched_questions = []
+        for q in stage['questions']:
+            qid = q.get('id')
+            if not qid:
+                continue  # skip вопросы без id
+            total_questions += 1
+            crm_data = crm_fields_map.get(qid)
+            if not crm_data:
+                skipped_questions_count += 1
+                logging.warning(f"Вопрос постобработки с id={qid} не найден в AmoCRM, пропущен!")
+                continue
+            
+            enums_sorted = None
+            if crm_data['enums']:
+                enums_sorted = sorted(crm_data['enums'], key=lambda x: x.get('sort', 0))
+            
+            enriched_q = {
+                'id': qid,
+                'comment': q.get('comment', ''),
+                'name': crm_data['name'],
+                'type': crm_data['type'],
+                'enums': enums_sorted
+            }
+            enriched_questions.append(enriched_q)
+            enriched_questions_count += 1
+            
+        enriched_stages.append({
+            'name': stage['name'],
+            'questions': enriched_questions
+        })
+    
+    print(f"[CRM_SYNC] Постобработка - Сводка: этапов={len(enriched_stages)}, вопросов всего={total_questions}, успешно обогащено={enriched_questions_count}, пропущено={skipped_questions_count}")
+    
+    # Сохраняем в файл
+    with open(ENRICHED_POST_CONFIG_PATH, 'w', encoding='utf-8') as f:
+        json.dump(enriched_stages, f, ensure_ascii=False, indent=2)
+    print(f"[CRM_SYNC] Enriched post funnel config сохранён в {os.path.abspath(ENRICHED_POST_CONFIG_PATH)}")
+    return enriched_stages

@@ -81,6 +81,8 @@ dialog_history/
 # Git
 .git/ 
 enriched_funnel_config.json
+enriched_post_funnel_config.json
+tmp/
 
 # Test files
 TEST*.wav

@@ -66,4 +66,7 @@ def main():
 if __name__ == "__main__":
     # Сначала обновляем enriched funnel config через CRM
     enrich_funnel_config_with_crm()
+    # Также обновляем enriched post funnel config
+    from crm.crm_api import enrich_post_funnel_config_with_crm
+    enrich_post_funnel_config_with_crm()
     main()

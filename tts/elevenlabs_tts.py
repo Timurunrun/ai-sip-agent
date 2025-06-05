@@ -23,7 +23,7 @@ class ElevenLabsTTS:
             
         logging.info(f"[TTS] ElevenLabs TTS инициализирован с voice_id: {self.voice_id}")
 
-    def text_to_speech(self, text: str, output_format: str = "mp3_44100_32") -> Optional[str]:
+    def text_to_speech(self, text: str, output_format: str = "mp3_44100_96") -> Optional[str]:
         """
         Преобразует текст в аудио через ElevenLabs API
         
