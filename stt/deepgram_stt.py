@@ -2,12 +2,9 @@ import os
 import threading
 import asyncio
 import websockets
-import wave
 import json
 import logging
 from llm.live_call.groq_agent import process_transcript, process_transcript_async
-import random
-import queue
 import time
 
 logging.basicConfig(

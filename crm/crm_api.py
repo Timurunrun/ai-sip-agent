@@ -2,7 +2,8 @@ import os
 import requests
 import logging
 import time
-from typing import Optional, Any
+import json
+from typing import Optional
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -10,9 +11,9 @@ class AmoCRMClient:
     """
     Удобный клиент для работы с AmoCRM API через постоянный access_token.
     """
-    def __init__(self, subdomain: Optional[str] = None, access_token: Optional[str] = None):
-        self.subdomain = subdomain or os.getenv("AMOCRM_SUBDOMAIN")
-        self.access_token = access_token or os.getenv("AMOCRM_ACCESS_TOKEN")
+    def __init__(self):
+        self.subdomain = os.getenv("AMOCRM_SUBDOMAIN")
+        self.access_token = os.getenv("AMOCRM_ACCESS_TOKEN")
         if not self.subdomain or not self.access_token:
             raise ValueError("Необходимо указать subdomain и access_token либо через параметры, либо через переменные окружения")
 
@@ -113,14 +114,13 @@ class AmoCRMClient:
         else:
             field_obj["values"].append({"value": value})
         data["custom_fields_values"].append(field_obj)
-        url = f"https://{os.environ.get('AMOCRM_SUBDOMAIN')}.amocrm.ru{endpoint}"
+        url = f"https://{self.subdomain}.amocrm.ru{endpoint}"
         resp = requests.patch(url, headers=headers, json=data)
         return resp.status_code, resp.text
 
     def _get_headers(self):
-        access_token = os.environ.get("AMOCRM_ACCESS_TOKEN")
         headers = {
-            "Authorization": f"Bearer {access_token}",
+            "Authorization": f"Bearer {self.access_token}",
             "Content-Type": "application/json",
             "User-Agent": "amoCRM-API-client/1.0"
         }
@@ -148,10 +148,9 @@ def wait_for_contact_and_lead(phone_number: str, amocrm_client: AmoCRMClient, ri
     return contact, lead
 
 # 1) Создание файла с вопросами для звонка (только name и comment)
-import json
+
 FUNNEL_QUESTIONS_PATH = os.path.join(os.path.dirname(__file__), 'funnel', 'live_call_questions.json')
 ENRICHED_CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'enriched_funnel_config.json')
-
 def load_funnel_stages_from_json():
     """
     Загружает FUNNEL_STAGES из funnel_questions.json
@@ -224,6 +223,7 @@ def enrich_funnel_config_with_crm():
     return enriched_stages
 
 # 2) Создание файла с вопросами для постобработки звонка
+
 POST_FUNNEL_QUESTIONS_PATH = os.path.join(os.path.dirname(__file__), 'funnel', 'post_processing_questions.json')
 ENRICHED_POST_CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'enriched_post_funnel_config.json')
 
@@ -263,7 +263,7 @@ def enrich_post_funnel_config_with_crm():
         crm_fields_map[f['id']] = {
             'name': f.get('name'),
             'type': f.get('type'),
-            'enums': f.get('enums') if 'enums' in f else None
+            'enums': f.get('enums')
         }
     
     FUNNEL_STAGES = load_post_funnel_stages_from_json()

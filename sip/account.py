@@ -1,5 +1,4 @@
 import threading
-import queue
 import pjsua2 as pj
 from .call import Call
 import re

@@ -5,7 +5,6 @@
 import sys
 import os
 import asyncio
-import logging
 
 # Добавляем родительскую папку в путь для импорта модулей
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
