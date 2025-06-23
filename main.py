@@ -5,14 +5,14 @@ import os
 from config import load_config
 from sip.endpoint import create_endpoint
 from sip.account import Account
-from crm.crm_api import enrich_funnel_config_with_crm
+from crm.crm_api import enrich_funnel_config_with_crm, enrich_post_funnel_config_with_crm
 
 def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     config = load_config()
     sip_event_queue = queue.Queue()
-    sip_event_queue.current_call = None  # текущий звонок (monkey-patch)
+    sip_event_queue.current_call = None  # текущий звонок
     sip_event_queue.config = config
     
     ep = None
@@ -38,9 +38,7 @@ def main():
         import time
         while True:
             try:
-                # Обрабатываем очередь аудиофайлов для воспроизведения
                 if hasattr(sip_event_queue, 'current_call') and sip_event_queue.current_call:
-                    # Импортируем функцию обработки очереди
                     from sip.audio_player import process_audio_queue
                     process_audio_queue()
                     
@@ -50,7 +48,7 @@ def main():
                 pass
             except Exception as e:
                 pass
-            time.sleep(0.1)
+            time.sleep(0.05)
 
     except KeyboardInterrupt:
         logging.info("Выход из программы...")
@@ -64,9 +62,8 @@ def main():
                 pass
 
 if __name__ == "__main__":
-    # Сначала обновляем enriched funnel config через CRM
+    # Получаем актуальные названия вопросов и вариантов ответов из CRM
     enrich_funnel_config_with_crm()
-    # Также обновляем enriched post funnel config
-    from crm.crm_api import enrich_post_funnel_config_with_crm
     enrich_post_funnel_config_with_crm()
+
     main()

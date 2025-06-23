@@ -147,7 +147,7 @@ def wait_for_contact_and_lead(phone_number: str, amocrm_client: AmoCRMClient, ri
     ringback_callback(start=False)
     return contact, lead
 
-# --- ENRICH FUNNEL CONFIG WITH CRM FIELDS ---
+# Создание файла с вопросами для звонка
 import json
 from llm.funnel_config import FUNNEL_STAGES
 ENRICHED_CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'enriched_funnel_config.json')
@@ -218,7 +218,7 @@ def enrich_funnel_config_with_crm():
     print(f"[CRM_SYNC] Enriched funnel config сохранён в {os.path.abspath(ENRICHED_CONFIG_PATH)}")
     return enriched_stages
 
-# --- ENRICH POST FUNNEL CONFIG WITH CRM FIELDS ---
+# Создание файла с вопросами для постобработки звонка
 from llm.post_funnel_config import FUNNEL_STAGES as POST_FUNNEL_STAGES
 ENRICHED_POST_CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'enriched_post_funnel_config.json')
 

@@ -29,6 +29,8 @@ class PostCallProcessor:
         
         # Формируем JSON схему с типами данных из CRM
         schema_fields = []
+        question_fields = []
+
         for stage in self.enriched_funnel_stages:
             for question in stage.get('questions', []):
                 question_id = question.get('id')
@@ -56,40 +58,38 @@ class PostCallProcessor:
                 
                 comment_info = f' // {comment}' if comment else ''
                 
-                schema_field = f'"{question_id}": {json_type}{enum_info}{comment_info}'
+                schema_field = f'{question_id}: {json_type}{enum_info}'
                 schema_fields.append(schema_field)
+
+                question_field = f'ID {question_id}: "{question_name}"' + (f', комментарий к вопросу: "{comment_info}"' if comment_info else '')
+                question_fields.append(question_field)
         
-        schema_text = ',\n  '.join(schema_fields)
+        schema_text = ',\n'.join(schema_fields)
+        question_text = '- ' + '\n-'.join(question_fields) # будет md-список вопросов
         
-        system_prompt = f"""Ты - аналитик истории звонков. Проанализируй диалог между менеджером и клиентом и извлеки ответы на все указанные вопросы.
-
-Верни результат ТОЛЬКО в формате JSON со следующей структурой:
-{{
-  {schema_text}
-}}
-
-Правила анализа:
-- Если на вопрос есть четкий ответ в диалоге - запиши его
-- Если ответа нет - null
-- Для полей с вариантами ответов возвращай ТОЛЬКО ID варианта (число), НЕ текстовое значение
-- Для множественного выбора (multiselect) возвращай массив ID: [123, 456]
-- Для одиночного выбора (select) возвращай один ID: 123
-- Соблюдай типы данных: строки в кавычках, числа и ID без кавычек, булевы как true/false
-- Отвечай кратко и по существу
-- НЕ придумывай данные, которых нет в диалоге
-
-Ответ должен содержать ТОЛЬКО JSON объект без дополнительных комментариев."""
-
+        system_prompt = (
+            "Ты — аналитик истории звонков. Проанализируй диалог между менеджером и клиентом и извлеки ответы на все указанные вопросы.\n\n"
+            "[ВОПРОСЫ]\n"
+            f"{question_text}\n\n"
+            "[СХЕМА JSON]\n"
+            "Верни результат ТОЛЬКО в формате JSON со следующей структурой:\n"
+            "{\n"
+            f'   {schema_text}\n'
+            "}\n\n"
+            "[ПРАВИЛА АНАЛИЗА]\n"
+            "- Строго соблюдай соответствие ID вопроса и его значения.\n"
+            "- Если на вопрос есть четкий ответ в диалоге — запиши его.\n"
+            "- Если ответа нет — null.\n"
+            "- Для полей с вариантами ответов возвращай ТОЛЬКО ID варианта (число), НЕ текстовое значение.\n"
+            "- Для множественного выбора (multiselect) возвращай массив ID: [123, 456].\n"
+            "- Для одиночного выбора (select) возвращай один ID: 123.\n"
+            "- Строго соблюдай типы данных: строки в кавычках, числа и ID без кавычек, булевы как true/false.\n"
+            "- НЕ придумывай данные, которых нет в диалоге.\n\n"
+            "Ответ должен содержать ТОЛЬКО JSON объект без дополнительных комментариев."
+        )
         return system_prompt
 
     def _map_crm_type_to_json_type(self, crm_type: str, enums: List[Dict] = None) -> str:
-        """Преобразует тип поля CRM в тип JSON схемы"""
-        # Если есть варианты ответов, возвращаем ID как число
-        if enums and len(enums) > 0:
-            if crm_type == 'multiselect':
-                return '[number]'  # Массив ID для множественного выбора
-            else:
-                return 'number'    # Одиночный ID для обычного выбора
         
         # Стандартные типы без вариантов
         type_mapping = {
@@ -97,8 +97,8 @@ class PostCallProcessor:
             'textarea': '"string"', 
             'numeric': 'number',
             'checkbox': 'boolean',
-            'select': '"string"',
-            'multiselect': '["string"]',
+            'select': '"number"',
+            'multiselect': 'array',
             'date': '"string"',
             'datetime': '"string"',
             'url': '"string"',
@@ -157,7 +157,7 @@ class PostCallProcessor:
                 model=self.model,
                 messages=messages,
                 response_format={"type": "json_object"},
-                temperature=0.1,
+                temperature=0.5,
             )
             
             analysis_result = response.choices[0].message.content
