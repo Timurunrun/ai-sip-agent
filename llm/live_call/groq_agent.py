@@ -6,7 +6,7 @@ import time
 from typing import List, Dict, Any, Optional
 
 from groq import Groq
-from llm.config_llm import SYSTEM_PROMPT, LLM
+from llm.live_call.config_llm import SYSTEM_PROMPT, LLM
 from crm.crm_api import load_enriched_funnel_config
 from sip.utils import get_active_lead_id
 from tts.elevenlabs_tts import text_to_speech_async

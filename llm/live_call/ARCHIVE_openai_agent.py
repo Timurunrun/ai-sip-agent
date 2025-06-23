@@ -3,7 +3,7 @@ from agents.run import RunConfig
 import threading
 import logging
 import json
-from llm.config_llm import SYSTEM_PROMPT, LLM
+from llm.live_call.config_llm import SYSTEM_PROMPT, LLM
 from crm.crm_api import load_enriched_funnel_config
 from crm.status_config import STAGE_STATUS_IDS
 from crm.crm_api import AmoCRMClient

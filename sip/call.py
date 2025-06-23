@@ -238,7 +238,7 @@ class Call(pj.Call):
                 return
             
             # Загружаем историю диалога
-            from llm.groq_agent import get_llm_agent
+            from llm.live_call.groq_agent import get_llm_agent
             agent = get_llm_agent()
             history = agent._load_history(self.lead_id)
             
@@ -247,7 +247,7 @@ class Call(pj.Call):
                 return
             
             # Запускаем постобработку
-            from llm.post_call_processor import process_call_end
+            from llm.postprocessing.post_call_processor import process_call_end
             process_call_end(self.lead_id, history)
             print(f"[POST_PROCESSOR] Постобработка запущена для лида {self.lead_id}")
             

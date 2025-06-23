@@ -31,7 +31,7 @@ class Account(pj.Account):
         call = Call(self, prm.callId)
         self.sip_event_queue.current_call = call
 
-        from llm.groq_agent import get_llm_agent
+        from llm.live_call.groq_agent import get_llm_agent
         get_llm_agent()
 
         ci = call.getInfo()

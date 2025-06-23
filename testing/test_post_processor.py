@@ -10,7 +10,7 @@ import logging
 # Добавляем родительскую папку в путь для импорта модулей
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from llm.post_call_processor import PostCallProcessor
+from llm.postprocessing.post_call_processor import PostCallProcessor
 
 def create_test_dialog_history():
     """

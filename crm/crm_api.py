@@ -147,9 +147,9 @@ def wait_for_contact_and_lead(phone_number: str, amocrm_client: AmoCRMClient, ri
     ringback_callback(start=False)
     return contact, lead
 
-# Создание файла с вопросами для звонка
+# 1) Создание файла с вопросами для звонка
 import json
-from llm.funnel_config import FUNNEL_STAGES
+from llm.live_call.funnel_config import FUNNEL_STAGES
 ENRICHED_CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'enriched_funnel_config.json')
 
 def load_enriched_funnel_config():
@@ -188,7 +188,7 @@ def enrich_funnel_config_with_crm():
         for q in stage['questions']:
             qid = q.get('id')
             if not qid:
-                continue  # skip вопросы без id
+                continue  # скипаем вопросы без id
             total_questions += 1
             crm_data = crm_fields_map.get(qid)
             if not crm_data:
@@ -218,8 +218,8 @@ def enrich_funnel_config_with_crm():
     print(f"[CRM_SYNC] Enriched funnel config сохранён в {os.path.abspath(ENRICHED_CONFIG_PATH)}")
     return enriched_stages
 
-# Создание файла с вопросами для постобработки звонка
-from llm.post_funnel_config import FUNNEL_STAGES as POST_FUNNEL_STAGES
+# 2) Создание файла с вопросами для постобработки звонка
+from llm.postprocessing.post_funnel_config import FUNNEL_STAGES as POST_FUNNEL_STAGES
 ENRICHED_POST_CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'enriched_post_funnel_config.json')
 
 def load_enriched_post_funnel_config():
