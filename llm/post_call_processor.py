@@ -50,18 +50,14 @@ class PostCallProcessor:
                     for enum in enums:
                         enum_id = enum.get('id')
                         enum_value = enum.get('value', '')
-                        if enum_id and enum_value:
-                            enum_mappings.append(f'{enum_id}="{enum_value}"')
-                    
-                    if enum_mappings:
-                        enum_info = f' // Варианты (возвращай только ID): {", ".join(enum_mappings)}'
-                
-                comment_info = f' // {comment}' if comment else ''
-                
-                schema_field = f'{question_id}: {json_type}{enum_info}'
+
+                        enum_mappings.append(f'ID {enum_id}": {enum_value}"')
+                    enum_info = "; ".join(enum_mappings)
+                                
+                schema_field = f'{question_id}: {json_type}'
                 schema_fields.append(schema_field)
 
-                question_field = f'ID {question_id}: "{question_name}"' + (f', комментарий к вопросу: "{comment_info}"' if comment_info else '')
+                question_field = (f'ID вопроса {question_id}: "{question_name}"') + (f'? Варианты ответа: {enum_info}' if enum_info else '') + (f'. Комментарий к вопросу: "{comment}"' if comment else '')
                 question_fields.append(question_field)
         
         schema_text = ',\n'.join(schema_fields)
@@ -77,14 +73,14 @@ class PostCallProcessor:
             f'   {schema_text}\n'
             "}\n\n"
             "[ПРАВИЛА АНАЛИЗА]\n"
-            "- Строго соблюдай соответствие ID вопроса и его значения.\n"
+            "- Строго соблюдай соответствие ID вопроса и его значения. После того, как закончишь думать про заполнение полей, ещё раз всё сопоставь с текстом и перепроверь.\n"
             "- Если на вопрос есть четкий ответ в диалоге — запиши его.\n"
             "- Если ответа нет — null.\n"
+            "- НЕ придумывай данные, которых нет в диалоге.\n\n"
             "- Для полей с вариантами ответов возвращай ТОЛЬКО ID варианта (число), НЕ текстовое значение.\n"
             "- Для множественного выбора (multiselect) возвращай массив ID: [123, 456].\n"
             "- Для одиночного выбора (select) возвращай один ID: 123.\n"
             "- Строго соблюдай типы данных: строки в кавычках, числа и ID без кавычек, булевы как true/false.\n"
-            "- НЕ придумывай данные, которых нет в диалоге.\n\n"
             "Ответ должен содержать ТОЛЬКО JSON объект без дополнительных комментариев."
         )
         return system_prompt
@@ -157,7 +153,7 @@ class PostCallProcessor:
                 model=self.model,
                 messages=messages,
                 response_format={"type": "json_object"},
-                temperature=0.5,
+                temperature=0.3,
             )
             
             analysis_result = response.choices[0].message.content
