@@ -4,11 +4,10 @@ import logging
 import os
 import threading
 from datetime import datetime
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 
 from groq import Groq
 from crm.crm_api import load_enriched_post_funnel_config
-
 
 class PostCallProcessor:
     """Обработчик для анализа истории звонков после их завершения"""
@@ -19,7 +18,6 @@ class PostCallProcessor:
         self.tmp_dir = os.path.join(os.path.dirname(__file__), '..', 'tmp')
         os.makedirs(self.tmp_dir, exist_ok=True)
         
-        # Загружаем обогащенную конфигурацию постобработки
         self.enriched_funnel_stages = load_enriched_post_funnel_config()
         
         logging.info(f"[POST_PROCESSOR] Инициализирован с моделью {self.model}")
@@ -27,7 +25,7 @@ class PostCallProcessor:
     def _create_system_prompt(self) -> str:
         """Создает системный промпт для анализа истории звонка"""
         
-        # Формируем JSON схему с типами данных из CRM
+        # Формируем JSON-схему с типами данных из CRM
         schema_fields = []
         question_fields = []
 
@@ -39,10 +37,10 @@ class PostCallProcessor:
                 comment = question.get('comment', '')
                 enums = question.get('enums', [])
                 
-                # Определяем тип данных для JSON схемы
+                # Определяем тип данных для JSON-схемы
                 json_type = self._map_crm_type_to_json_type(question_type, enums)
                 
-                # Добавляем информацию о вариантах ответов если есть
+                # Добавляем информацию о вариантах ответов, если есть
                 enum_info = ""
                 if enums:
                     # Создаем список вариантов с ID и значениями для понимания модели
@@ -86,8 +84,6 @@ class PostCallProcessor:
         return system_prompt
 
     def _map_crm_type_to_json_type(self, crm_type: str, enums: List[Dict] = None) -> str:
-        
-        # Стандартные типы без вариантов
         type_mapping = {
             'text': '"string"',
             'textarea': '"string"', 
@@ -131,7 +127,6 @@ class PostCallProcessor:
             history: История диалога
         """
         try:
-            # Формируем текст диалога для анализа
             dialog_text = self._format_dialog_for_analysis(history)
             
             if not dialog_text.strip():

@@ -247,7 +247,7 @@ class Call(pj.Call):
                 return
             
             # Запускаем постобработку
-            from llm.postprocessing.post_call_processor import process_call_end
+            from llm.post_processing.post_processor import process_call_end
             process_call_end(self.lead_id, history)
             print(f"[POST_PROCESSOR] Постобработка запущена для лида {self.lead_id}")
             

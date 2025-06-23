@@ -149,8 +149,8 @@ def wait_for_contact_and_lead(phone_number: str, amocrm_client: AmoCRMClient, ri
 
 # 1) Создание файла с вопросами для звонка (только name и comment)
 import json
+FUNNEL_QUESTIONS_PATH = os.path.join(os.path.dirname(__file__), 'funnel', 'live_call_questions.json')
 ENRICHED_CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'enriched_funnel_config.json')
-FUNNEL_QUESTIONS_PATH = os.path.join(os.path.dirname(__file__), '..', 'llm', 'live_call', 'funnel_questions.json')
 
 def load_funnel_stages_from_json():
     """
@@ -224,8 +224,18 @@ def enrich_funnel_config_with_crm():
     return enriched_stages
 
 # 2) Создание файла с вопросами для постобработки звонка
-from llm.postprocessing.post_funnel_config import FUNNEL_STAGES
+POST_FUNNEL_QUESTIONS_PATH = os.path.join(os.path.dirname(__file__), 'funnel', 'post_processing_questions.json')
 ENRICHED_POST_CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'enriched_post_funnel_config.json')
+
+def load_post_funnel_stages_from_json():
+    """
+    Загружает FUNNEL_STAGES из post_funnel_questions.json
+    """
+    try:
+        with open(POST_FUNNEL_QUESTIONS_PATH, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        raise RuntimeError(f"Не удалось загрузить post funnel stages из файла {POST_FUNNEL_QUESTIONS_PATH}: {e}")
 
 def load_enriched_post_funnel_config():
     """
@@ -255,6 +265,8 @@ def enrich_post_funnel_config_with_crm():
             'type': f.get('type'),
             'enums': f.get('enums') if 'enums' in f else None
         }
+    
+    FUNNEL_STAGES = load_post_funnel_stages_from_json()
     
     enriched_stages = []
     total_questions = 0
