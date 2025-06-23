@@ -3,7 +3,7 @@ import queue
 import pjsua2 as pj
 from .call import Call
 import re
-from crm.status_config import STAGE_STATUS_IDS
+import json
 import uuid
 import os
 import time
@@ -12,6 +12,15 @@ from pathlib import Path
 # Создаем папку для временных файлов записей
 TMP_RECORDINGS_DIR = Path("/tmp/pjsua_recordings")
 TMP_RECORDINGS_DIR.mkdir(exist_ok=True)
+
+def load_stage_status_ids():
+    """Загружает статусы этапов воронки"""
+    try:
+        stages_file = os.path.join(os.path.dirname(__file__), '..', 'crm', 'funnel', 'stages.json')
+        with open(stages_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"[CRM] Ошибка при загрузке stages.json: {e}")
 
 class Account(pj.Account):
     def __init__(self, sip_event_queue, transcript_queue=None):
@@ -79,11 +88,14 @@ class Account(pj.Account):
             call_prm.statusCode = 200
             call.answer(call_prm)
             print("[PJSUA] Звонок автоматически принят")
-            
-            # 3. Изменить статус сделки
+              # 3. Изменить статус сделки
             if lead_found and hasattr(call, 'lead_id'):
-                status, resp = amocrm_client.update_lead_status(call.lead_id, STAGE_STATUS_IDS[0])
-                print(f"[CRM] Статус сделки обновлён: {status}, {resp}")
+                try:
+                    stage_status_ids = load_stage_status_ids()
+                    status, resp = amocrm_client.update_lead_status(call.lead_id, stage_status_ids[0])
+                    print(f"[CRM] Статус сделки обновлён: {status}, {resp}")
+                except Exception as e:
+                    print(f"[CRM] Ошибка при обновлении статуса сделки: {e}")
         else:
             print(f"[PJSUA] Не удалось извлечь номер из {ci.remoteUri}")
             phone_number = None

@@ -14,8 +14,7 @@ logging.basicConfig(level=logging.INFO)
 _llm_agent_instance = None
 
 def load_system_prompt() -> str:
-    current_dir = os.path.dirname(__file__)
-    prompt_file = os.path.join(current_dir, 'system_prompt.md')
+    prompt_file = os.path.join(os.path.dirname(__file__), 'system_prompt.md')
     
     try:
         with open(prompt_file, 'r', encoding='utf-8') as f:
@@ -25,8 +24,7 @@ def load_system_prompt() -> str:
         return "Твоя задача сказать, что телефония на техническом обслуживании, пока что пусть пишут в чат или на почту."
 
 def load_system_config() -> dict:
-    current_dir = os.path.dirname(__file__)
-    config_file = os.path.join(current_dir, 'config.json')
+    config_file = os.path.join(os.path.dirname(__file__), 'config.json')
 
     try:
         with open(config_file, 'r', encoding='utf-8') as f:
