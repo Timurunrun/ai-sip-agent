@@ -147,14 +147,24 @@ def wait_for_contact_and_lead(phone_number: str, amocrm_client: AmoCRMClient, ri
     ringback_callback(start=False)
     return contact, lead
 
-# 1) Создание файла с вопросами для звонка
+# 1) Создание файла с вопросами для звонка (только name и comment)
 import json
-from llm.live_call.funnel_config import FUNNEL_STAGES
 ENRICHED_CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'enriched_funnel_config.json')
+FUNNEL_QUESTIONS_PATH = os.path.join(os.path.dirname(__file__), '..', 'llm', 'live_call', 'funnel_questions.json')
+
+def load_funnel_stages_from_json():
+    """
+    Загружает FUNNEL_STAGES из funnel_questions.json
+    """
+    try:
+        with open(FUNNEL_QUESTIONS_PATH, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        raise RuntimeError(f"Не удалось загрузить funnel stages из файла {FUNNEL_QUESTIONS_PATH}: {e}")
 
 def load_enriched_funnel_config():
     """
-    Загружает enriched funnel config из enriched_funnel_config.json
+    Загружает вопросы из enriched_funnel_config.json
     """
     try:
         with open(ENRICHED_CONFIG_PATH, 'r', encoding='utf-8') as f:
@@ -164,7 +174,7 @@ def load_enriched_funnel_config():
 
 def enrich_funnel_config_with_crm():
     """
-    Возвращает enriched funnel config: список этапов, где каждый вопрос содержит id, comment, name, type, enums (если есть).
+    Возвращает список этапов, внутри которого каждый вопрос содержит только name и comment.
     Также сохраняет результат в enriched_funnel_config.json (перезаписывает при каждом запуске).
     """
     client = AmoCRMClient()
@@ -175,10 +185,11 @@ def enrich_funnel_config_with_crm():
     crm_fields_map = {}
     for f in crm_fields['_embedded']['custom_fields']:
         crm_fields_map[f['id']] = {
-            'name': f.get('name'),
-            'type': f.get('type'),
-            'enums': f.get('enums') if 'enums' in f else None
+            'name': f.get('name')
         }
+    
+    FUNNEL_STAGES = load_funnel_stages_from_json()
+    
     enriched_stages = []
     total_questions = 0
     enriched_questions_count = 0
@@ -195,15 +206,9 @@ def enrich_funnel_config_with_crm():
                 skipped_questions_count += 1
                 logging.warning(f"Вопрос с id={qid} не найден в AmoCRM, пропущен!")
                 continue
-            enums_sorted = None
-            if crm_data['enums']:
-                enums_sorted = sorted(crm_data['enums'], key=lambda x: x.get('sort', 0))
             enriched_q = {
-                'id': qid,
-                'comment': q.get('comment', ''),
                 'name': crm_data['name'],
-                'type': crm_data['type'],
-                'enums': enums_sorted
+                'comment': q.get('comment', '')
             }
             enriched_questions.append(enriched_q)
             enriched_questions_count += 1
@@ -219,7 +224,7 @@ def enrich_funnel_config_with_crm():
     return enriched_stages
 
 # 2) Создание файла с вопросами для постобработки звонка
-from llm.postprocessing.post_funnel_config import FUNNEL_STAGES as POST_FUNNEL_STAGES
+from llm.postprocessing.post_funnel_config import FUNNEL_STAGES
 ENRICHED_POST_CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'enriched_post_funnel_config.json')
 
 def load_enriched_post_funnel_config():
@@ -234,7 +239,7 @@ def load_enriched_post_funnel_config():
 
 def enrich_post_funnel_config_with_crm():
     """
-    Возвращает enriched post funnel config: список этапов, где каждый вопрос содержит id, comment, name, type, enums (если есть).
+    Возвращает enriched post funnel config: список этапов, внутри которого каждый вопрос содержит id, comment, name, type, enums (если есть).
     Также сохраняет результат в enriched_post_funnel_config.json (перезаписывает при каждом запуске).
     """
     client = AmoCRMClient()
@@ -255,8 +260,8 @@ def enrich_post_funnel_config_with_crm():
     total_questions = 0
     enriched_questions_count = 0
     skipped_questions_count = 0
-    
-    for stage in POST_FUNNEL_STAGES:
+
+    for stage in FUNNEL_STAGES:
         enriched_questions = []
         for q in stage['questions']:
             qid = q.get('id')

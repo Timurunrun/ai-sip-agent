@@ -2,11 +2,9 @@ import asyncio
 import json
 import logging
 import os
-import time
 from typing import List, Dict, Any, Optional
 
 from groq import Groq
-from llm.live_call.config_llm import SYSTEM_PROMPT, LLM
 from crm.crm_api import load_enriched_funnel_config
 from sip.utils import get_active_lead_id
 from tts.elevenlabs_tts import text_to_speech_async
@@ -15,14 +13,39 @@ logging.basicConfig(level=logging.INFO)
 
 _llm_agent_instance = None
 
+def load_system_prompt() -> str:
+    current_dir = os.path.dirname(__file__)
+    prompt_file = os.path.join(current_dir, 'system_prompt.md')
+    
+    try:
+        with open(prompt_file, 'r', encoding='utf-8') as f:
+            return f.read().strip()
+    except Exception as e:
+        logging.error(f"[GROQ] Ошибка загрузки системного промта: {e}")
+        return "Твоя задача сказать, что телефония на техническом обслуживании, пока что пусть пишут в чат или на почту."
+
+def load_system_config() -> dict:
+    current_dir = os.path.dirname(__file__)
+    config_file = os.path.join(current_dir, 'config.json')
+
+    try:
+        with open(config_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        logging.error(f"[GROQ] Ошибка загрузки конфигурации: {e}")
+
 class GroqAgent:
-    def __init__(self, instructions=SYSTEM_PROMPT, model=LLM):
+    def __init__(self):
         self.client = Groq()
         self.funnel_stages = load_enriched_funnel_config()
         questions = self.get_all_questions()
-        questions_text = '\n'.join(f'- {q}' for q in questions) if questions else '- нет вопросов'
-        self.system_prompt = f"{instructions}\n\n[ВОПРОСЫ ДЛЯ КЛИЕНТА]\n{questions_text}"
-        self.model = model
+        questions_text = '\n'.join(f'- {q}' for q in questions) if questions else 'Нет вопросов'
+
+        self.system_prompt = load_system_prompt()
+        self.system_prompt = f"{self.system_prompt}\n\n[ВОПРОСЫ ДЛЯ КЛИЕНТА]\n{questions_text}"
+
+        self.config = load_system_config().get("Groq", {})
+
         self.lock = asyncio.Lock()
         self.llm_busy = False
         self.history_dir = os.path.join(os.path.dirname(__file__), '..', 'dialog_history')
@@ -102,10 +125,10 @@ class GroqAgent:
                 
                 try:
                     response = self.client.chat.completions.create(
-                        model=self.model,
+                        model=self.config.get("LLM", ""),
                         messages=groq_messages,
-                        temperature=0.7,
-                        max_tokens=1024
+                        temperature=self.config.get("temperature", 0.6),
+                        max_tokens=self.config.get("max_tokens", 1024)
                     )
                     
                     full_reply = response.choices[0].message.content
@@ -121,7 +144,6 @@ class GroqAgent:
                     
                 except Exception as e:
                     logging.error(f"[GROQ] Ошибка при обращении к API: {str(e)}", exc_info=True)
-                    return f"Произошла ошибка при обработке запроса: {str(e)}"
                     
             finally:
                 self.llm_busy = False
