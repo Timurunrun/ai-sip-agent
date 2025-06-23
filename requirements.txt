@@ -2,8 +2,6 @@ pjsua2
 websocket-client
 python-dotenv
 groq
-deepgram-sdk>=0.3.0
 websockets
-pyaudio
 dotenv
 requests

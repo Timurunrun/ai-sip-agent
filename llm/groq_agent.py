@@ -21,7 +21,7 @@ class GroqAgent:
         self.funnel_stages = load_enriched_funnel_config()
         questions = self.get_all_questions()
         questions_text = '\n'.join(f'- {q}' for q in questions) if questions else '- нет вопросов'
-        self.system_prompt = f"{instructions}\n\n[Вопросы для пользователя:]\n{questions_text}"
+        self.system_prompt = f"{instructions}\n\n[ВОПРОСЫ ДЛЯ КЛИЕНТА]\n{questions_text}"
         self.model = model
         self.lock = asyncio.Lock()
         self.llm_busy = False
