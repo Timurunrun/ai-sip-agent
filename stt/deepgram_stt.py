@@ -57,7 +57,7 @@ class DeepgramSTTSession:
             f"&utterance_end_ms={self.config.get('utterance_end_ms', '1000')}"
             f"&vad_events={self.config.get('vad_events', 'true')}"
             f"&language={self.config.get('language', 'ru')}"
-            f"&model={self.config.get('model', 'nova-2')}"
+            f"&model={self.config.get('model', '')}"
         )
         headers = {
             'Authorization': f'Token {DEEPGRAM_API_KEY}'

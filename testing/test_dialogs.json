@@ -1,5 +1,5 @@
 {
-  "complex_catering_request": {
+  "easy": {
     "description": "Очевидный запрос (нормализованный диалог)",
     "dialog": [
       {
@@ -100,7 +100,7 @@
       }
     ]
   },
-  "school_catering": {
+  "medium_school": {
     "description": "Заказ для школы (ненормализированный)",
     "dialog": [
       {
@@ -161,7 +161,7 @@
       }
     ]
   },
-  "construction_site": {
+  "hard_construction": {
     "description": "Заказ для стройки (ненормализированный)",
     "dialog": [
       {

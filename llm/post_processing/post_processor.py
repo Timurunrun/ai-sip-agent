@@ -9,12 +9,23 @@ from typing import Dict, Any, List
 from groq import Groq
 from crm.crm_api import load_enriched_post_funnel_config
 
+def load_system_config() -> dict:
+    config_file = os.path.join(os.path.dirname(__file__), 'system_config.json')
+
+    try:
+        with open(config_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        logging.error(f"[POST_PROCESSOR] Ошибка загрузки конфигурации: {e}")
+        return {}
+
 class PostCallProcessor:
     """Обработчик для анализа истории звонков после их завершения"""
     
     def __init__(self):
         self.client = Groq()
-        self.model = "qwen-qwq-32b"
+        self.config = load_system_config().get("Groq", {})
+        self.model = self.config.get("LLM", "")
         self.tmp_dir = os.path.join(os.path.dirname(__file__), '..', 'tmp')
         os.makedirs(self.tmp_dir, exist_ok=True)
         
@@ -55,7 +66,7 @@ class PostCallProcessor:
                 schema_field = f'{question_id}: {json_type}'
                 schema_fields.append(schema_field)
 
-                question_field = (f'ID вопроса {question_id}: "{question_name}"') + (f'? Варианты ответа: {enum_info}' if enum_info else '') + (f'. Комментарий к вопросу: "{comment}"' if comment else '')
+                question_field = (f'ID вопроса {question_id}: "{question_name}"') + (f'? Варианты ответа (в твоём ответе должны быть только ID): {enum_info}' if enum_info else '') + (f'. Комментарий к вопросу: "{comment}"' if comment else '')
                 question_fields.append(question_field)
         
         schema_text = ',\n'.join(schema_fields)
@@ -78,7 +89,7 @@ class PostCallProcessor:
             "- Для полей с вариантами ответов возвращай ТОЛЬКО ID варианта (число), НЕ текстовое значение.\n"
             "- Для множественного выбора (multiselect) возвращай массив ID: [123, 456].\n"
             "- Для одиночного выбора (select) возвращай один ID: 123.\n"
-            "- Строго соблюдай типы данных: строки в кавычках, числа и ID без кавычек, булевы как true/false.\n"
+            "- СТРОГО соблюдай типы данных из схемы: строки в кавычках, числа и ID без кавычек, булевы как true/false.\n"
             "Ответ должен содержать ТОЛЬКО JSON объект без дополнительных комментариев."
         )
         return system_prompt
@@ -133,10 +144,8 @@ class PostCallProcessor:
                 logging.warning(f"[POST_PROCESSOR] Пустая история для лида {lead_id}")
                 return
             
-            # Создаем промпт для анализа
             system_prompt = self._create_system_prompt()
             
-            # Отправляем запрос к Groq
             messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Проанализируй этот диалог:\n\n{dialog_text}"}
@@ -148,7 +157,9 @@ class PostCallProcessor:
                 model=self.model,
                 messages=messages,
                 response_format={"type": "json_object"},
-                temperature=0.3,
+                temperature=self.config.get("temperature", 0.5),
+                reasoning_effort=self.config.get("reasoning_effort", "none"),
+                max_tokens=self.config.get("max_tokens", 40960)
             )
             
             analysis_result = response.choices[0].message.content
@@ -189,7 +200,7 @@ class PostCallProcessor:
             # Проверяем, что результат - валидный JSON
             parsed_result = json.loads(analysis_json)
             
-            # Создаем полный результат с метаданными
+            # Добавляем метаданные
             full_result = {
                 "lead_id": lead_id,
                 "timestamp": timestamp,
@@ -205,9 +216,6 @@ class PostCallProcessor:
             
         except json.JSONDecodeError as e:
             logging.error(f"[POST_PROCESSOR] Неверный JSON от модели: {e}")
-            # Сохраняем как есть для отладки
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write(analysis_json)
         except Exception as e:
             logging.error(f"[POST_PROCESSOR] Ошибка сохранения результата: {e}")
 
