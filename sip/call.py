@@ -3,8 +3,7 @@ import os
 import time
 import wave
 import pjsua2 as pj
-from stt.deepgram_stt import stt_from_wav, DeepgramSTTSession
-from sip.utils import get_active_lead_id
+from stt.deepgram_stt import DeepgramSTTSession
 
 class Call(pj.Call):
     current = None

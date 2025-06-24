@@ -177,19 +177,3 @@ class DeepgramSTTSession:
                 self.loop.run_until_complete(_close_ws())
         except Exception as e:
             logging.error(f"Ошибка при завершении Deepgram STT: {e}")
-
-def stt_from_wav(wav_file):
-    """
-    Инициализирует DeepgramSTTSession для WAV-файла с поступающим аудиопотоком, подключается к Deepgram API
-    и начинает потоковую передачу аудио для распознавания речи.
-
-    Args:
-        wav_file (str): Путь к WAV-файлу, в который поступает аудиопоток.
-
-    Returns:
-        DeepgramSTTSession: Объект сессии, обрабатывающий процесс транскрипции.
-    """
-    session = DeepgramSTTSession(wav_file)
-    session.connect()
-    session.start_streaming()
-    return session 
