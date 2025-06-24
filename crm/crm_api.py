@@ -222,7 +222,7 @@ def enrich_funnel_config_with_crm():
     print(f"[CRM_SYNC] Enriched funnel config сохранён в {os.path.abspath(ENRICHED_CONFIG_PATH)}")
     return enriched_stages
 
-# 2) Создание файла с вопросами для постобработки звонка
+# 2) Создание файла с вопросами для пост-обработки звонка
 
 POST_FUNNEL_QUESTIONS_PATH = os.path.join(os.path.dirname(__file__), 'funnel', 'post_processing_questions.json')
 ENRICHED_POST_CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'enriched_post_funnel_config.json')
@@ -253,10 +253,10 @@ def enrich_post_funnel_config_with_crm():
     Также сохраняет результат в enriched_post_funnel_config.json (перезаписывает при каждом запуске).
     """
     client = AmoCRMClient()
-    print('[CRM_SYNC] Получаем поля AmoCRM через API для постобработки...')
+    print('[CRM_SYNC] Получаем поля AmoCRM через API для пост-обработки...')
     crm_fields = client.get_lead_custom_fields()
     if not crm_fields or '_embedded' not in crm_fields or 'custom_fields' not in crm_fields['_embedded']:
-        raise RuntimeError("Не удалось получить список полей AmoCRM для постобработки!")
+        raise RuntimeError("Не удалось получить список полей AmoCRM для пост-обработки!")
     
     crm_fields_map = {}
     for f in crm_fields['_embedded']['custom_fields']:
@@ -283,7 +283,7 @@ def enrich_post_funnel_config_with_crm():
             crm_data = crm_fields_map.get(qid)
             if not crm_data:
                 skipped_questions_count += 1
-                logging.warning(f"Вопрос постобработки с id={qid} не найден в AmoCRM, пропущен!")
+                logging.warning(f"Вопрос пост-обработки с id={qid} не найден в AmoCRM, пропущен!")
                 continue
             
             enums_sorted = None
@@ -305,7 +305,7 @@ def enrich_post_funnel_config_with_crm():
             'questions': enriched_questions
         })
     
-    print(f"[CRM_SYNC] Постобработка - Сводка: этапов={len(enriched_stages)}, вопросов всего={total_questions}, успешно обогащено={enriched_questions_count}, пропущено={skipped_questions_count}")
+    print(f"[CRM_SYNC] пост-обработка - Сводка: этапов={len(enriched_stages)}, вопросов всего={total_questions}, успешно обогащено={enriched_questions_count}, пропущено={skipped_questions_count}")
     
     # Сохраняем в файл
     with open(ENRICHED_POST_CONFIG_PATH, 'w', encoding='utf-8') as f:

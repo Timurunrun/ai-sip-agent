@@ -8,6 +8,7 @@ from typing import Dict, Any, List
 
 from groq import Groq
 from crm.crm_api import load_enriched_post_funnel_config
+from .crm_updater import get_crm_updater
 
 def load_system_config() -> dict:
     config_file = os.path.join(os.path.dirname(__file__), 'system_config.json')
@@ -77,7 +78,7 @@ class PostCallProcessor:
             "[ВОПРОСЫ]\n"
             f"{question_text}\n\n"
             "[СХЕМА JSON]\n"
-            "Верни результат ТОЛЬКО в формате JSON со следующей структурой:\n"
+            "Верни результат ТОЛЬКО в формате JSON СТРОГО со следующей структурой:\n"
             "{\n"
             f'   {schema_text}\n'
             "}\n\n"
@@ -85,30 +86,30 @@ class PostCallProcessor:
             "- Строго соблюдай соответствие ID вопроса и его значения. После того, как закончишь думать про заполнение полей, ещё раз всё сопоставь с текстом и перепроверь.\n"
             "- Если на вопрос есть четкий ответ в диалоге — запиши его.\n"
             "- Если ответа нет — null.\n"
-            "- НЕ придумывай данные, которых нет в диалоге.\n\n"
+            "- НЕ придумывай данные, которых нет в диалоге.\n"
             "- Для полей с вариантами ответов возвращай ТОЛЬКО ID варианта (число), НЕ текстовое значение.\n"
             "- Для множественного выбора (multiselect) возвращай массив ID: [123, 456].\n"
             "- Для одиночного выбора (select) возвращай один ID: 123.\n"
             "- СТРОГО соблюдай типы данных из схемы: строки в кавычках, числа и ID без кавычек, булевы как true/false.\n"
-            "Ответ должен содержать ТОЛЬКО JSON объект без дополнительных комментариев."
+            "Ответ должен содержать ТОЛЬКО JSON-объект без дополнительных комментариев."
         )
         return system_prompt
 
     def _map_crm_type_to_json_type(self, crm_type: str, enums: List[Dict] = None) -> str:
         type_mapping = {
-            'text': '"string"',
-            'textarea': '"string"', 
+            'text': 'string',
+            'textarea': 'string', 
             'numeric': 'number',
             'checkbox': 'boolean',
-            'select': '"number"',
+            'select': 'number',
             'multiselect': 'array',
-            'date': '"string"',
-            'datetime': '"string"',
-            'url': '"string"',
-            'phone': '"string"',
-            'email': '"string"'
+            'date': 'string',
+            'datetime': 'string',
+            'url': 'string',
+            'phone': 'string',
+            'email': 'string'
         }
-        return type_mapping.get(crm_type, '"string"')
+        return type_mapping.get(crm_type, 'string')
 
     def process_call_history_async(self, lead_id: str, history: List[Dict[str, Any]]) -> None:
         """
@@ -127,7 +128,7 @@ class PostCallProcessor:
         # Запускаем в отдельном потоке, чтобы не блокировать основной поток
         thread = threading.Thread(target=run_processing, daemon=True)
         thread.start()
-        logging.info(f"[POST_PROCESSOR] Запущена постобработка для лида {lead_id}")
+        logging.info(f"[POST_PROCESSOR] Запущена пост-обработка для лида {lead_id}")
 
     async def _process_call_history(self, lead_id: str, history: List[Dict[str, Any]]) -> None:
         """
@@ -166,6 +167,9 @@ class PostCallProcessor:
             
             # Сохраняем результат в tmp
             self._save_analysis_result(lead_id, analysis_result, dialog_text)
+            
+            # Заполняем CRM
+            await self._update_crm_with_analysis(lead_id, analysis_result)
             
             logging.info(f"[POST_PROCESSOR] Анализ завершен для лида {lead_id}")
             
@@ -219,6 +223,29 @@ class PostCallProcessor:
         except Exception as e:
             logging.error(f"[POST_PROCESSOR] Ошибка сохранения результата: {e}")
 
+    async def _update_crm_with_analysis(self, lead_id: str, analysis_json: str) -> None:
+        """
+        Заполняет CRM извлеченными данными из анализа истории звонка пост-процессором
+        
+        Args:
+            lead_id: ID лида/сделки
+            analysis_json: JSON-строка с результатами анализа истории звонка
+        """
+        try:
+            analysis_data = json.loads(analysis_json)
+            
+            crm_updater = get_crm_updater()
+            success = crm_updater.update_lead_with_analysis(lead_id, analysis_data)
+            
+            if success:
+                logging.info(f"[POST_PROCESSOR] CRM успешно обновлена для лида {lead_id}")
+            else:
+                logging.error(f"[POST_PROCESSOR] Не удалось обновить CRM для лида {lead_id}")
+                
+        except json.JSONDecodeError as e:
+            logging.error(f"[POST_PROCESSOR] Ошибка парсинга JSON анализа для лида {lead_id}: {e}")
+        except Exception as e:
+            logging.error(f"[POST_PROCESSOR] Ошибка обновления CRM для лида {lead_id}: {e}")
 
 # Глобальный экземпляр процессора
 _post_processor_instance = None
@@ -232,7 +259,7 @@ def get_post_processor() -> PostCallProcessor:
 
 def process_call_end(lead_id: str, history: List[Dict[str, Any]]) -> None:
     """
-    Запускает постобработку завершенного звонка
+    Запускает пост-обработку завершенного звонка
     
     Args:
         lead_id: ID лида/сделки

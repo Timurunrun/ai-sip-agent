@@ -1,5 +1,5 @@
 """
-Тест постобработки звонка
+Тест пост-обработки звонка
 """
 
 import sys
@@ -13,13 +13,11 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from llm.post_processing.post_processor import PostCallProcessor
 
 def load_test_dialogs():
-    """Загружает тестовые диалоги из файла"""
     dialogs_path = os.path.join(os.path.dirname(__file__), 'test_dialogs.json')
     with open(dialogs_path, 'r', encoding='utf-8') as f:
         return json.load(f)
 
 def select_dialog():
-    """Отображает меню для выбора диалога"""
     dialogs = load_test_dialogs()
     
     print("\nДоступные тестовые диалоги:")
@@ -47,17 +45,14 @@ def select_dialog():
 
 
 async def test_post_processor():
-    """
-    Основная функция тестирования постобработки
-    """
-    print("ТЕСТИРОВАНИЕ ПОСТОБРАБОТКИ ЗВОНКА")
+    print("ТЕСТИРОВАНИЕ пост-обработкИ ЗВОНКА")
     
     dialog_key, test_history = select_dialog()
     if not test_history:
         print("Тест отменен.")
         return
     
-    test_lead_id = f"TEST_{dialog_key}"
+    test_lead_id = "29187765"
     
     print(f"\n1. Выбран диалог: {dialog_key}")
     print(f"   - ID лида: {test_lead_id}")
@@ -73,16 +68,13 @@ async def test_post_processor():
     print(f"\n3. Инициализация постпроцессора...")
     processor = PostCallProcessor()
     
-    print(f"\n4. Запуск постобработки...")
+    print(f"\n4. Запуск пост-обработки...")
     await processor._process_call_history(test_lead_id, test_history)
     
-    print(f"\n5. Постобработка завершена!")
+    print(f"\n5. пост-обработка завершена!")
     print(f"   Результат должен быть сохранен в папке tmp/")
 
 def main():
-    """
-    Точка входа в программу
-    """
     try:
         asyncio.run(test_post_processor())
         

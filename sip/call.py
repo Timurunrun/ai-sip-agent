@@ -69,7 +69,7 @@ class Call(pj.Call):
             if self._stt_session:
                 self._stt_session.close()
             
-            # Запускаем постобработку звонка
+            # Запускаем пост-обработку звонка
             self._start_post_call_processing()
             
             print("[PJSUA] Вызов завершен и ресурсы освобождены")
@@ -229,11 +229,11 @@ class Call(pj.Call):
             return
 
     def _start_post_call_processing(self):
-        """Запускает постобработку завершенного звонка"""
+        """Запускает пост-обработку завершенного звонка"""
         try:
             # Проверяем наличие ID лида
             if not hasattr(self, 'lead_id') or not self.lead_id:
-                print("[POST_PROCESSOR] Нет ID лида для постобработки")
+                print("[POST_PROCESSOR] Нет ID лида для пост-обработки")
                 return
             
             # Загружаем историю диалога
@@ -245,10 +245,10 @@ class Call(pj.Call):
                 print(f"[POST_PROCESSOR] Нет истории для лида {self.lead_id}")
                 return
             
-            # Запускаем постобработку
+            # Запускаем пост-обработку
             from llm.post_processing.post_processor import process_call_end
             process_call_end(self.lead_id, history)
-            print(f"[POST_PROCESSOR] Постобработка запущена для лида {self.lead_id}")
+            print(f"[POST_PROCESSOR] пост-обработка запущена для лида {self.lead_id}")
             
         except Exception as e:
-            print(f"[POST_PROCESSOR] Ошибка запуска постобработки: {e}")
+            print(f"[POST_PROCESSOR] Ошибка запуска пост-обработки: {e}")
