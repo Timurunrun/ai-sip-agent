@@ -1,7 +1,7 @@
 {
     "Groq": {
         "LLM": "qwen/qwen3-32b",
-        "temperature": 0.5,
+        "temperature": 0.52,
         "max_tokens": 40960,
         "reasoning_effort": "default"
     }

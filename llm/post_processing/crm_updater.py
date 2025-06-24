@@ -1,4 +1,6 @@
 import logging
+import json
+import os
 from typing import Dict, Any, List
 from crm.crm_api import AmoCRMClient
 from crm.crm_api import load_enriched_post_funnel_config
@@ -10,6 +12,7 @@ class CRMUpdater:
         self.client = AmoCRMClient()
         self.enriched_funnel_stages = load_enriched_post_funnel_config()
         self._build_field_mapping()
+        self._load_stages()
         
         logging.info("[CRM_UPDATER] Инициализирован")
 
@@ -27,62 +30,87 @@ class CRMUpdater:
                         'enums': question.get('enums', [])
                     }
 
-    def update_lead_with_analysis(self, lead_id: str, analysis_data: Dict[str, Any], max_retries: int = 3) -> bool:
+    def _load_stages(self) -> None:
+        """Загружает список статусов из stages.json"""
+        try:
+            stages_file = os.path.join(os.path.dirname(__file__), '..', '..', 'crm', 'funnel', 'stages.json')
+            with open(stages_file, 'r', encoding='utf-8') as f:
+                self.stages = json.load(f)
+            
+            if self.stages:
+                self.final_stage_id = self.stages[-1]  # Последний статус из списка
+                logging.info(f"[CRM_UPDATER] Загружено {len(self.stages)} статусов, финальный статус: {self.final_stage_id}")
+            else:
+                self.final_stage_id = None
+                logging.warning("[CRM_UPDATER] Список статусов пуст")
+        except Exception as e:
+            logging.error(f"[CRM_UPDATER] Ошибка загрузки статусов: {e}")
+            self.stages = []
+            self.final_stage_id = None
+
+    def update_lead_with_analysis(self, lead_id: str, analysis_data: Dict[str, Any]) -> bool:
         """
         Заполняет поля лида в CRM на основе результатов анализа
         
         Args:
             lead_id: ID лида/сделки
             analysis_data: Результат анализа в формате {field_id: value}
-            max_retries: Максимальное количество попыток
-            
+              
         Returns:
             bool: True если обновление прошло успешно
         """
-        for attempt in range(1, max_retries + 1):
-            try:
-                logging.info(f"[CRM_UPDATER] Попытка {attempt}/{max_retries} обновления лида {lead_id}")
-                
-                success_count = 0
-                total_fields = len(analysis_data)
-                
-                for field_id_str, value in analysis_data.items():
-                    try:
-                        field_id = int(field_id_str)
-                    except (ValueError, TypeError):
-                        logging.warning(f"[CRM_UPDATER] Некорректный field_id: {field_id_str}")
-                        continue
-                        
-                    if value is None:
-                        logging.debug(f"[CRM_UPDATER] Поле {field_id} пропущено (значение null)")
-                        continue
+        try:
+            logging.info(f"[CRM_UPDATER] Обновление лида {lead_id}")
+            
+            success_count = 0
+            failed_fields = []
+            processed_fields = 0
+            
+            for field_id_str, value in analysis_data.items():
+                try:
+                    field_id = int(field_id_str)
+                except (ValueError, TypeError):
+                    logging.warning(f"[CRM_UPDATER] Некорректный field_id: {field_id_str}")
+                    continue
                     
-                    field_info = self.field_mapping.get(field_id)
-                    if not field_info:
-                        logging.warning(f"[CRM_UPDATER] Поле {field_id} не найдено в маппинге")
-                        continue
-                    
-                    if self._update_single_field(lead_id, field_id, value, field_info):
-                        success_count += 1
+                if value is None:
+                    logging.debug(f"[CRM_UPDATER] Поле {field_id} пропущено (значение null)")
+                    continue
                 
-                if success_count > 0:
-                    logging.info(f"[CRM_UPDATER] Успешно обновлено {success_count}/{total_fields} полей лида {lead_id}")
-                    return True
+                field_info = self.field_mapping.get(field_id)
+                if not field_info:
+                    logging.warning(f"[CRM_UPDATER] Поле {field_id} не найдено в маппинге")
+                    continue
+                
+                processed_fields += 1
+                field_name = field_info.get('name', f'Field_{field_id}')
+                
+                if self._update_single_field(lead_id, field_id, value, field_info):
+                    success_count += 1
                 else:
-                    logging.warning(f"[CRM_UPDATER] Ни одно поле не было обновлено для лида {lead_id}")
-                    
-            except Exception as e:
-                logging.error(f"[CRM_UPDATER] Ошибка на попытке {attempt}: {e}")
+                    failed_fields.append(f"{field_name} (ID: {field_id})")
+            
+            if processed_fields == 0:
+                logging.warning(f"[CRM_UPDATER] Нет полей для обновления лида {lead_id}")
+                return False
+            
+            if success_count == processed_fields:
+                logging.info(f"[CRM_UPDATER] Успешно обновлены ВСЕ поля ({success_count}/{processed_fields}) лида {lead_id}")
                 
-                if attempt < max_retries:
-                    logging.info(f"[CRM_UPDATER] Повторная попытка через 1 секунду...")
-                    import time
-                    time.sleep(1)
-                else:
-                    logging.error(f"[CRM_UPDATER] Исчерпаны все попытки для лида {lead_id}")
-                    return False
-        
-        return False
+                # Изменяем статус лида на финальный этап после успешного заполнения всех полей
+                if self.final_stage_id:
+                    self._update_lead_status(lead_id, self.final_stage_id)
+                
+                return True
+            else:
+                logging.warning(f"[CRM_UPDATER] Обновлено только {success_count}/{processed_fields} полей лида {lead_id}")
+                if failed_fields:
+                    logging.warning(f"[CRM_UPDATER] Поля с ошибками: {', '.join(failed_fields)}")
+                return False
+                
+        except Exception as e:
+            logging.error(f"[CRM_UPDATER] Ошибка при обновлении лида {lead_id}: {e}")
+            return False
 
     def _update_single_field(self, lead_id: str, field_id: int, value: Any, field_info: Dict[str, Any]) -> bool:
         """
@@ -139,13 +167,51 @@ class CRMUpdater:
         """
         if field_type == 'multiselect' and isinstance(value, list):
             # Для multiselect возвращаем список ID
-            return [int(v) for v in value if self._is_valid_enum_id(v, enums)]
+            valid_ids = [int(v) for v in value if self._is_valid_enum_id(v, enums)]
+            return valid_ids if valid_ids else None
         elif field_type == 'select':
             # Для select возвращаем один ID
-            if self._is_valid_enum_id(value, enums):
-                return int(value)
+            if isinstance(value, list):
+                # Если для select-поля передан массив, берем первый валидный элемент
+                logging.warning(f"[CRM_UPDATER] Для select-поля передан массив {value}, используем первый валидный элемент")
+                for v in value:
+                    if self._is_valid_enum_id(v, enums):
+                        return int(v)
+                return None
+            else:
+                # Обычная обработка одиночного значения
+                if self._is_valid_enum_id(value, enums):
+                    return int(value)
         
         return None
+
+    def _update_lead_status(self, lead_id: str, status_id: int) -> bool:
+        """
+        Обновляет статус лида в CRM
+        
+        Args:
+            lead_id: ID лида/сделки
+            status_id: ID нового статуса
+            
+        Returns:
+            bool: True если обновление прошло успешно
+        """
+        try:
+            status_code, response_text = self.client.update_lead_status(
+                lead_id=int(lead_id),
+                status_id=status_id
+            )
+            
+            if status_code == 200:
+                logging.info(f"[CRM_UPDATER] Статус лида {lead_id} успешно обновлен на {status_id}")
+                return True
+            else:
+                logging.error(f"[CRM_UPDATER] ОШИБКА обновления статуса лида {lead_id}: {status_code} - {response_text}")
+                return False
+                
+        except Exception as e:
+            logging.error(f"[CRM_UPDATER] ОШИБКА при обновлении статуса лида {lead_id}: {e}")
+            return False
 
     def _is_valid_enum_id(self, enum_id: Any, enums: List[Dict]) -> bool:
         """Проверяет, существует ли enum_id в списке вариантов"""

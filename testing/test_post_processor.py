@@ -17,6 +17,11 @@ def load_test_dialogs():
     with open(dialogs_path, 'r', encoding='utf-8') as f:
         return json.load(f)
 
+def load_test_lead_id():
+    lead_id_path = os.path.join(os.path.dirname(__file__), 'test_lead_id.txt')
+    with open(lead_id_path, 'r', encoding='utf-8') as f:
+        return f.read().strip()
+
 def select_dialog():
     dialogs = load_test_dialogs()
     
@@ -45,14 +50,14 @@ def select_dialog():
 
 
 async def test_post_processor():
-    print("ТЕСТИРОВАНИЕ пост-обработкИ ЗВОНКА")
+    print("ТЕСТИРОВАНИЕ пост-обработки ЗВОНКА")
     
     dialog_key, test_history = select_dialog()
     if not test_history:
         print("Тест отменен.")
         return
     
-    test_lead_id = "29187765"
+    test_lead_id = load_test_lead_id()
     
     print(f"\n1. Выбран диалог: {dialog_key}")
     print(f"   - ID лида: {test_lead_id}")

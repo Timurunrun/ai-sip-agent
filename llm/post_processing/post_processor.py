@@ -78,7 +78,7 @@ class PostCallProcessor:
             "[ВОПРОСЫ]\n"
             f"{question_text}\n\n"
             "[СХЕМА JSON]\n"
-            "Верни результат ТОЛЬКО в формате JSON СТРОГО со следующей структурой:\n"
+            "Верни результат ТОЛЬКО в формате JSON ОБЯЗАТЕЛЬНО со следующей структурой:\n"
             "{\n"
             f'   {schema_text}\n'
             "}\n\n"
@@ -87,9 +87,9 @@ class PostCallProcessor:
             "- Если на вопрос есть четкий ответ в диалоге — запиши его.\n"
             "- Если ответа нет — null.\n"
             "- НЕ придумывай данные, которых нет в диалоге.\n"
-            "- Для полей с вариантами ответов возвращай ТОЛЬКО ID варианта (число), НЕ текстовое значение.\n"
+            "- Для полей с вариантами ответов возвращай ИМЕННО ID вариантов (число), НЕ текстовое значение.\n"
+            "- Для одиночного выбора (select) возвращай ОДИН ID: 123.\n"
             "- Для множественного выбора (multiselect) возвращай массив ID: [123, 456].\n"
-            "- Для одиночного выбора (select) возвращай один ID: 123.\n"
             "- СТРОГО соблюдай типы данных из схемы: строки в кавычках, числа и ID без кавычек, булевы как true/false.\n"
             "Ответ должен содержать ТОЛЬКО JSON-объект без дополнительных комментариев."
         )
@@ -124,19 +124,19 @@ class PostCallProcessor:
                 asyncio.run(self._process_call_history(lead_id, history))
             except Exception as e:
                 logging.error(f"[POST_PROCESSOR] Ошибка в асинхронной обработке: {e}")
-        
-        # Запускаем в отдельном потоке, чтобы не блокировать основной поток
+          # Запускаем в отдельном потоке, чтобы не блокировать основной поток
         thread = threading.Thread(target=run_processing, daemon=True)
         thread.start()
         logging.info(f"[POST_PROCESSOR] Запущена пост-обработка для лида {lead_id}")
 
-    async def _process_call_history(self, lead_id: str, history: List[Dict[str, Any]]) -> None:
+    async def _process_call_history(self, lead_id: str, history: List[Dict[str, Any]], max_analysis_attempts: int = 3) -> None:
         """
         Основная логика обработки истории звонка
         
         Args:
             lead_id: ID лида/сделки  
             history: История диалога
+            max_analysis_attempts: Максимальное количество попыток генерации анализа
         """
         try:
             dialog_text = self._format_dialog_for_analysis(history)
@@ -152,29 +152,41 @@ class PostCallProcessor:
                 {"role": "user", "content": f"Проанализируй этот диалог:\n\n{dialog_text}"}
             ]
             
-            logging.info(f"[POST_PROCESSOR] Отправляем запрос к Groq для лида {lead_id}")
-            
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                response_format={"type": "json_object"},
-                temperature=self.config.get("temperature", 0.5),
-                reasoning_effort=self.config.get("reasoning_effort", "none"),
-                max_tokens=self.config.get("max_tokens", 40960)
-            )
-            
-            analysis_result = response.choices[0].message.content
-            
-            # Сохраняем результат в tmp
-            self._save_analysis_result(lead_id, analysis_result, dialog_text)
-            
-            # Заполняем CRM
-            await self._update_crm_with_analysis(lead_id, analysis_result)
-            
-            logging.info(f"[POST_PROCESSOR] Анализ завершен для лида {lead_id}")
+            # Попытки генерации анализа и обновления CRM
+            for attempt in range(1, max_analysis_attempts + 1):
+                try:
+                    logging.info(f"[POST_PROCESSOR] Попытка анализа {attempt}/{max_analysis_attempts} для лида {lead_id}")
+                    
+                    # Генерируем анализ
+                    analysis_result = await self._make_groq_request_with_retries(messages, lead_id)
+                    
+                    # Сохраняем результат в tmp
+                    self._save_analysis_result(lead_id, analysis_result, dialog_text, attempt)
+                    
+                    # Заполняем CRM
+                    crm_success = await self._update_crm_with_analysis(lead_id, analysis_result)
+                    
+                    if crm_success:
+                        logging.info(f"[POST_PROCESSOR] Анализ и обновление CRM успешно завершены для лида {lead_id} с попытки {attempt}")
+                        return
+                    else:
+                        logging.warning(f"[POST_PROCESSOR] CRM обновление неудачно для лида {lead_id} (попытка {attempt}/{max_analysis_attempts})")
+                        if attempt < max_analysis_attempts:
+                            logging.info(f"[POST_PROCESSOR] Начинается повторная генерация анализа для лида {lead_id}")
+                            await asyncio.sleep(2)  # Небольшая пауза перед повтором
+                        else:
+                            logging.error(f"[POST_PROCESSOR] Все {max_analysis_attempts} попытки анализа исчерпаны для лида {lead_id}")
+                            return
+                            
+                except Exception as e:
+                    logging.error(f"[POST_PROCESSOR] Ошибка в попытке анализа {attempt}/{max_analysis_attempts} для лида {lead_id}: {e}")
+                    if attempt < max_analysis_attempts:
+                        await asyncio.sleep(2)
+                    else:
+                        raise e
             
         except Exception as e:
-            logging.error(f"[POST_PROCESSOR] Ошибка обработки истории для лида {lead_id}: {e}")
+            logging.error(f"[POST_PROCESSOR] Критическая ошибка обработки истории для лида {lead_id}: {e}")
 
     def _format_dialog_for_analysis(self, history: List[Dict[str, Any]]) -> str:
         """Форматирует историю диалога для анализа"""
@@ -194,10 +206,10 @@ class PostCallProcessor:
         
         return '\n'.join(dialog_lines)
 
-    def _save_analysis_result(self, lead_id: str, analysis_json: str, original_dialog: str) -> None:
+    def _save_analysis_result(self, lead_id: str, analysis_json: str, original_dialog: str, attempt: int = 1) -> None:
         """Сохраняет результат анализа в файл"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"post_analysis_lead_{lead_id}_{timestamp}.json"
+        filename = f"post_analysis_lead_{lead_id}_{timestamp}_attempt_{attempt}.json"
         filepath = os.path.join(self.tmp_dir, filename)
         
         try:
@@ -223,13 +235,16 @@ class PostCallProcessor:
         except Exception as e:
             logging.error(f"[POST_PROCESSOR] Ошибка сохранения результата: {e}")
 
-    async def _update_crm_with_analysis(self, lead_id: str, analysis_json: str) -> None:
+    async def _update_crm_with_analysis(self, lead_id: str, analysis_json: str) -> bool:
         """
         Заполняет CRM извлеченными данными из анализа истории звонка пост-процессором
         
         Args:
             lead_id: ID лида/сделки
             analysis_json: JSON-строка с результатами анализа истории звонка
+            
+        Returns:
+            bool: True если обновление прошло успешно
         """
         try:
             analysis_data = json.loads(analysis_json)
@@ -239,13 +254,63 @@ class PostCallProcessor:
             
             if success:
                 logging.info(f"[POST_PROCESSOR] CRM успешно обновлена для лида {lead_id}")
+                return True
             else:
                 logging.error(f"[POST_PROCESSOR] Не удалось обновить CRM для лида {lead_id}")
+                return False
                 
         except json.JSONDecodeError as e:
             logging.error(f"[POST_PROCESSOR] Ошибка парсинга JSON анализа для лида {lead_id}: {e}")
+            return False
         except Exception as e:
             logging.error(f"[POST_PROCESSOR] Ошибка обновления CRM для лида {lead_id}: {e}")
+            return False
+
+    async def _make_groq_request_with_retries(self, messages: List[Dict[str, str]], lead_id: str, max_retries: int = 3) -> str:
+        """
+        Выполняет запрос к Groq API (с повторными попытками в случае ошибок)
+        
+        Args:
+            messages: Сообщения для отправки в Groq
+            lead_id: ID лида для логирования
+            max_retries: Максимальное количество попыток (по умолчанию 3)
+            
+        Returns:
+            str: Ответ от модели
+            
+        Raises:
+            Exception: Если все попытки исчерпаны
+        """
+        last_exception = None
+        
+        for attempt in range(1, max_retries + 1):
+            try:
+                logging.info(f"[POST_PROCESSOR] Попытка {attempt}/{max_retries} запроса к Groq для лида {lead_id}")
+                
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    response_format={"type": "json_object"},
+                    temperature=self.config.get("temperature", 0.5),
+                    reasoning_effort=self.config.get("reasoning_effort", "none"),
+                    max_tokens=self.config.get("max_tokens", 40960)
+                )
+                
+                analysis_result = response.choices[0].message.content
+                logging.info(f"[POST_PROCESSOR] Успешный ответ от Groq для лида {lead_id} с попытки {attempt}")
+                return analysis_result
+                
+            except Exception as e:
+                last_exception = e
+                logging.warning(f"[POST_PROCESSOR] Ошибка при запросе к Groq (попытка {attempt}/{max_retries}) для лида {lead_id}: {e}")
+                
+                if attempt < max_retries:
+                    await asyncio.sleep(1)
+                else:
+                    logging.error(f"[POST_PROCESSOR] Все {max_retries} попытки исчерпаны для лида {lead_id}. Последняя ошибка: {e}")
+        
+        # Если дошли сюда, значит все попытки провалились
+        raise last_exception
 
 # Глобальный экземпляр процессора
 _post_processor_instance = None
