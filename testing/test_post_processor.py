@@ -70,7 +70,7 @@ async def test_post_processor():
         print(f"{role}: {msg['content']}")
     print("-" * 50)
     
-    print(f"\n3. Инициализация постпроцессора...")
+    print(f"\n3. Инициализация пост-процессора...")
     processor = PostCallProcessor()
     
     print(f"\n4. Запуск пост-обработки...")
