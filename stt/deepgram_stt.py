@@ -13,12 +13,20 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-RATE = 16000
-CHANNELS = 1
-CHUNK = 1600
-
 from dotenv import load_dotenv
 load_dotenv()
+
+def load_speech_config():
+    config_path = os.path.join(os.path.dirname(__file__), 'speech_config.json')
+    if not os.path.exists(config_path):
+        logging.error(f"Файл конфигурации {config_path} не найден")
+        return None
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except json.JSONDecodeError as e:
+        logging.error(f"Ошибка чтения конфигурации: {e}")
+        return None
 
 DEEPGRAM_API_KEY = os.getenv('DEEPGRAM_API_KEY')
 if not DEEPGRAM_API_KEY:
@@ -36,19 +44,20 @@ class DeepgramSTTSession:
         self._send_task = None
         self._recv_task = None
         self._last_utterance_end_time = None
+        self.config = load_speech_config().get('Deepgram', {})
 
     async def _connect_ws(self):
         url = (
             f"wss://api.deepgram.com/v1/listen"
-            f"?encoding=linear16"
-            f"&sample_rate={RATE}"
-            f"&channels={CHANNELS}"
-            f"&interim_results=true"
-            f"&endpointing=100"
-            f"&utterance_end_ms=1000"
-            f"&vad_events=true"
-            f"&language=ru"
-            f"&model=nova-2"
+            f"?encoding={self.config.get('encoding', 'linear16')}"
+            f"&sample_rate={self.config.get('sample_rate', 16000)}"
+            f"&channels={self.config.get('channels', 1)}"
+            f"&interim_results={self.config.get('interim_results', 'true')}"
+            f"&endpointing={self.config.get('endpointing', '100')}"
+            f"&utterance_end_ms={self.config.get('utterance_end_ms', '1000')}"
+            f"&vad_events={self.config.get('vad_events', 'true')}"
+            f"&language={self.config.get('language', 'ru')}"
+            f"&model={self.config.get('model', 'nova-2')}"
         )
         headers = {
             'Authorization': f'Token {DEEPGRAM_API_KEY}'
@@ -64,7 +73,7 @@ class DeepgramSTTSession:
             no_data_count = 0
             while not self.stop_event.is_set():
                 f_read.seek(position)
-                chunk = f_read.read(CHUNK * 2)
+                chunk = f_read.read(self.config.get('chunk', 1600) * 2)
                 if chunk:
                     await self.ws.send(chunk)
                     position += len(chunk)
@@ -88,7 +97,7 @@ class DeepgramSTTSession:
                 last_word_end = data.get('last_word_end', 0)
                 self._last_utterance_end_time = time.time()
                 print(f"[UTTERANCE END] Конец речи в {last_word_end}s (ts={self._last_utterance_end_time:.3f})")
-                full_text = ' '.join([b.strip() for b in buffer]).strip()
+                full_text = ' '.join([str(b).strip() for b in buffer]).strip()
                 if full_text:
                     print(f"[STT] Расшифровка: {full_text}")
                     def llm_thread():
@@ -170,6 +179,16 @@ class DeepgramSTTSession:
             logging.error(f"Ошибка при завершении Deepgram STT: {e}")
 
 def stt_from_wav(wav_file):
+    """
+    Инициализирует DeepgramSTTSession для WAV-файла с поступающим аудиопотоком, подключается к Deepgram API
+    и начинает потоковую передачу аудио для распознавания речи.
+
+    Args:
+        wav_file (str): Путь к WAV-файлу, в который поступает аудиопоток.
+
+    Returns:
+        DeepgramSTTSession: Объект сессии, обрабатывающий процесс транскрипции.
+    """
     session = DeepgramSTTSession(wav_file)
     session.connect()
     session.start_streaming()
