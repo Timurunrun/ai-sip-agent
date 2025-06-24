@@ -16,7 +16,7 @@ def create_endpoint():
     ep_cfg.medConfig.ecOptions = 0
     ep_cfg.medConfig.ecTailLen = 0
     
-    # Джиттер буфер для стабильности входящего аудио
+    # Джиттер-буфер для стабильности входящего аудио
     ep_cfg.medConfig.jbInit = 20
     ep_cfg.medConfig.jbMinPre = 10
     ep_cfg.medConfig.jbMaxPre = 100

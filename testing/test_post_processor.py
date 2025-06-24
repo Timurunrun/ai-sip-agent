@@ -57,7 +57,7 @@ async def test_post_processor():
         print("Тест отменен.")
         return
     
-    test_lead_id = f"test_{dialog_key}_{20250624}_140000"
+    test_lead_id = f"TEST_{dialog_key}"
     
     print(f"\n1. Выбран диалог: {dialog_key}")
     print(f"   - ID лида: {test_lead_id}")
