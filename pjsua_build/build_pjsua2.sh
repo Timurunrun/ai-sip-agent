@@ -119,7 +119,7 @@ import pjsua2, sys, pathlib
 print("✔ pjsua2 импортирован. Расположение:", pathlib.Path(pjsua2.__file__).resolve())
 e = pjsua2.Endpoint()
 e.libCreate()
-print("✔ Endpoint создан; версия PJSIP:", pjsua2.Lib.instance().libVersion().full)
+print("✔ Endpoint создан успешно")
 e.libDestroy()
 PY
 }
