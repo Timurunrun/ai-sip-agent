@@ -2,6 +2,7 @@ import threading
 import os
 import time
 import wave
+import queue
 import pjsua2 as pj
 from stt.deepgram_stt import DeepgramSTTSession
 
@@ -23,7 +24,7 @@ class Call(pj.Call):
         self._player_start_time = 0
         self._max_playback_duration = 30
         self._current_audio_duration = 0  # Длительность текущего файла
-        Call.current = self
+        self.audio_queue = queue.Queue()
 
     def onCallState(self, prm):
         ci = self.getInfo()
@@ -63,9 +64,8 @@ class Call(pj.Call):
                         self._current_audio_duration = 0
             except Exception as e:
                 print(f"[PJSUA] Ошибка при освобождении медиа ресурсов: {e}")
-            if hasattr(self.acc.sip_event_queue, 'current_call'):
-                self.acc.sip_event_queue.current_call = None
-            Call.current = None
+            if hasattr(self.acc, 'active_calls'):
+                self.acc.active_calls.pop(self.getId(), None)
             if self._stt_session:
                 self._stt_session.close()
             
@@ -95,7 +95,7 @@ class Call(pj.Call):
 
     def connect_stt_session(self, filename):
         self._recording_filename = filename
-        self._stt_session = DeepgramSTTSession(filename)
+        self._stt_session = DeepgramSTTSession(filename, call=self)
         self._stt_session.connect()
 
     def _get_audio_duration(self, audio_file_path):
@@ -209,6 +209,30 @@ class Call(pj.Call):
             self._player_start_time = 0
             self._current_audio_duration = 0
             return False
+
+    def queue_audio_file(self, audio_file_path):
+        try:
+            self.audio_queue.put(audio_file_path, block=False)
+        except queue.Full:
+            print("[AUDIO] Очередь воспроизведения переполнена")
+
+    def process_audio_queue(self):
+        processed = False
+        try:
+            while not self.audio_queue.empty():
+                try:
+                    audio_file_path = self.audio_queue.get_nowait()
+                    success = self.play_audio_file(audio_file_path)
+                    if success:
+                        processed = True
+                    else:
+                        print(f"[AUDIO] Не удалось воспроизвести: {audio_file_path}")
+                    self.audio_queue.task_done()
+                except queue.Empty:
+                    break
+        except Exception as e:
+            print(f"[AUDIO] Ошибка при обработке очереди: {e}")
+        return processed
 
     def start_audio_streaming(self, media_index):
         if self.audio_streaming:

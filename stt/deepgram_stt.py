@@ -34,8 +34,9 @@ if not DEEPGRAM_API_KEY:
     exit(1)
 
 class DeepgramSTTSession:
-    def __init__(self, wav_file):
+    def __init__(self, wav_file, call=None):
         self.wav_file = wav_file
+        self.call = call
         self.ws = None
         self.stop_event = threading.Event()
         self.loop = None
@@ -110,12 +111,19 @@ class DeepgramSTTSession:
                                 except RuntimeError:
                                     loop = None
                                 if loop and loop.is_running():
-                                    fut = asyncio.run_coroutine_threadsafe(process_transcript_async(full_text), loop)
+                                    fut = asyncio.run_coroutine_threadsafe(
+                                        process_transcript_async(full_text, getattr(self.call, 'lead_id', None), self.call),
+                                        loop,
+                                    )
                                     llm_response = fut.result()
                                 else:
-                                    llm_response = asyncio.run(process_transcript_async(full_text))
+                                    llm_response = asyncio.run(
+                                        process_transcript_async(full_text, getattr(self.call, 'lead_id', None), self.call)
+                                    )
                             else:
-                                llm_response = process_transcript(full_text)
+                                llm_response = process_transcript(
+                                    full_text, getattr(self.call, 'lead_id', None), self.call
+                                )
                         except Exception as e:
                             llm_response = f"[LLM] Ошибка: {e}"
                         delay_ms = None

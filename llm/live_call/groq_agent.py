@@ -6,7 +6,6 @@ from typing import List, Dict, Any, Optional
 
 from groq import Groq
 from crm.crm_api import load_enriched_funnel_config
-from sip.utils import get_active_lead_id
 from tts.elevenlabs_tts import text_to_speech_async
 
 logging.basicConfig(level=logging.INFO)
@@ -106,11 +105,10 @@ class GroqAgent:
         
         return groq_messages
 
-    async def process_async(self, user_text: str) -> str:
+    async def process_async(self, user_text: str, lead_id: Optional[str], call=None) -> str:
         if self.llm_busy:
             return "[GROQ] Пожалуйста, дождитесь ответа на предыдущий вопрос."
         
-        lead_id = get_active_lead_id()
         if not lead_id:
             logging.warning("[GROQ] Не удалось получить ID активного лида")
         
@@ -132,7 +130,7 @@ class GroqAgent:
                     full_reply = response.choices[0].message.content
                     
                     # Отправляем реплику в TTS и на воспроизведение
-                    self._send_to_tts_and_play(full_reply)
+                    self._send_to_tts_and_play(full_reply, call)
                     
                     history.append({"role": "assistant", "content": full_reply})
                     self._save_history(lead_id, history)
@@ -155,26 +153,26 @@ class GroqAgent:
         log_lines.append("========== КОНЕЦ ИСТОРИИ ==========")
         logging.info("\n".join(log_lines))
 
-    def _send_to_tts_and_play(self, text: str) -> None:
+    def _send_to_tts_and_play(self, text: str, call=None) -> None:
         """
         Отправляет текст в TTS и добавляет аудиофайл в очередь для воспроизведения
         """
         logging.info(f"[GROQ->TTS] Отправляем в TTS: {text}")
         
         def tts_callback(audio_filepath: Optional[str]) -> None:
-            if audio_filepath and os.path.exists(audio_filepath):
+            if audio_filepath and os.path.exists(audio_filepath) and call:
                 logging.info(f"[TTS] Аудиофайл готов: {audio_filepath}")
-                # Добавляем файл в очередь воспроизведения (безопасно из любого потока)
-                from sip.audio_player import queue_audio_for_playback
-                queue_audio_for_playback(audio_filepath)
-                logging.info(f"[TTS] Файл добавлен в очередь: {os.path.basename(audio_filepath)}")
-            else:
+                call.queue_audio_file(audio_filepath)
+                logging.info(
+                    f"[TTS] Файл добавлен в очередь: {os.path.basename(audio_filepath)}"
+                )
+            elif not audio_filepath:
                 logging.error("[TTS] Не удалось создать аудиофайл")
         
         # Асинхронно создаем аудио и добавляем в очередь
         text_to_speech_async(text, tts_callback)
 
-    def process(self, user_text: str):
+    def process(self, user_text: str, lead_id: Optional[str], call=None):
         loop = None
         try:
             loop = asyncio.get_running_loop()
@@ -182,9 +180,9 @@ class GroqAgent:
             pass
             
         if loop and loop.is_running():
-            return asyncio.create_task(self.process_async(user_text))
+            return asyncio.create_task(self.process_async(user_text, lead_id, call))
         else:
-            return asyncio.run(self.process_async(user_text))
+            return asyncio.run(self.process_async(user_text, lead_id, call))
 
 
 # Глобальные функции для совместимости
@@ -197,12 +195,12 @@ def get_llm_agent():
         _llm_agent_instance = GroqAgent()
     return _llm_agent_instance
 
-async def process_transcript_async(transcript: str) -> str:
+async def process_transcript_async(transcript: str, lead_id: Optional[str], call=None) -> str:
     """Асинхронная обработка транскрипта"""
     agent = get_llm_agent()
-    return await agent.process_async(transcript)
+    return await agent.process_async(transcript, lead_id, call)
 
-def process_transcript(transcript: str):
+def process_transcript(transcript: str, lead_id: Optional[str], call=None):
     """Синхронная обработка транскрипта"""
     loop = None
     try:
@@ -211,6 +209,6 @@ def process_transcript(transcript: str):
         pass
         
     if loop and loop.is_running():
-        return asyncio.create_task(process_transcript_async(transcript))
+        return asyncio.create_task(process_transcript_async(transcript, lead_id, call))
     else:
-        return asyncio.run(process_transcript_async(transcript))
+        return asyncio.run(process_transcript_async(transcript, lead_id, call))

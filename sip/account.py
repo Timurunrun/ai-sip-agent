@@ -27,6 +27,7 @@ class Account(pj.Account):
         self.sip_event_queue = sip_event_queue
         self.transcript_queue = transcript_queue
         self.sem_reg = threading.Semaphore(0)
+        self.active_calls = {}
 
     def onRegState(self, prm):
         print(f"[PJSUA] Статус регистрации: {prm.reason}")
@@ -37,7 +38,7 @@ class Account(pj.Account):
         print("[PJSUA] Входящий звонок...")
         call_id = str(uuid.uuid4())
         call = Call(self, prm.callId)
-        self.sip_event_queue.current_call = call
+        self.active_calls[prm.callId] = call
 
         from llm.live_call.groq_agent import get_llm_agent
         get_llm_agent()
@@ -104,5 +105,3 @@ class Account(pj.Account):
                 time.sleep(0.05)
             call.start_audio_streaming(0)
         threading.Thread(target=start_streaming_after_answer, daemon=True).start()
-
-_active_lead_id = None

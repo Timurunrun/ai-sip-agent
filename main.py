@@ -12,7 +12,6 @@ def main():
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     config = load_config()
     sip_event_queue = queue.Queue()
-    sip_event_queue.current_call = None  # текущий звонок
     sip_event_queue.config = config
     
     ep = None
@@ -38,15 +37,12 @@ def main():
         import time
         while True:
             try:
-                if hasattr(sip_event_queue, 'current_call') and sip_event_queue.current_call:
-                    from sip.audio_player import process_audio_queue
-                    process_audio_queue()
-                    
-                    # Проверяем отложенное воспроизведение аудио в текущем звонке
-                    sip_event_queue.current_call.check_pending_audio()
+                for call in list(acc.active_calls.values()):
+                    call.process_audio_queue()
+                    call.check_pending_audio()
             except queue.Empty:
                 pass
-            except Exception as e:
+            except Exception:
                 pass
             time.sleep(0.05)
 
