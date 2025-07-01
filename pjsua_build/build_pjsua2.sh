@@ -41,7 +41,7 @@ install_apt_deps() {
     libasound2-dev libssl-dev libopus-dev \
     libv4l-dev libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev \
     libavformat-dev libavcodec-dev libavdevice-dev \
-    libavfilter-dev libavresample-dev libx264-dev \
+    libavfilter-dev libx264-dev \
     libopencore-amrwb-dev libopencore-amrnb-dev libvo-amrwbenc-dev
 }
 
