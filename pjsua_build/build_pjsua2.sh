@@ -37,12 +37,13 @@ install_apt_deps() {
   sudo apt-get update
   sudo apt-get install -y \
     build-essential git autoconf libtool pkg-config \
-    swig python3-dev python3-venv \
-    libasound2-dev libssl-dev libopus-dev \
-    libv4l-dev libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev \
-    libavformat-dev libavcodec-dev libavdevice-dev \
-    libavfilter-dev libx264-dev \
-    libopencore-amrwb-dev libopencore-amrnb-dev libvo-amrwbenc-dev
+    swig python3-dev python3-venv libssl-dev
+    # всё ниже нужно для video/audio (сейчас отключено)
+    # libasound2-dev libopus-dev \
+    # libv4l-dev libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev \
+    # libavformat-dev libavcodec-dev libavdevice-dev \
+    # libavfilter-dev libx264-dev \
+    # libopencore-amrwb-dev libopencore-amrnb-dev libvo-amrwbenc-dev
 }
 
 create_venv() {
@@ -58,29 +59,22 @@ create_venv() {
 }
 
 clone_pjsip() {
-  if [[ -d "$SRC_DIR" ]]; then
-    warn "Каталог $SRC_DIR уже существует, пропускаем clone."
-  else
-    log "Клонируем pjproject v$PJ_VERSION..."
-    git clone --branch "$PJ_VERSION" --depth 1 https://github.com/pjsip/pjproject.git "$SRC_DIR"
-  fi
+  git clone --branch "$PJ_VERSION" --depth 1 https://github.com/pjsip/pjproject.git "$SRC_DIR"
 }
 
 build_pjsip() {
   log "Сборка PJSIP (prefix=$SCRIPT_DIR/$PREFIX_DIR)..."
   cd "$SRC_DIR"
 
-  # Ниже укажите нужные вам параметры
+  # Ниже указываются параметры сборки
   ./configure \
+    CFLAGS="$(python3-config --includes) ${CFLAGS-}" \
     --prefix="$SCRIPT_DIR/$PREFIX_DIR" \
     --enable-shared \
-    --disable-video --disable-audio --disable-v4l2 --disable-sdl \
-    --with-opus \
-    CFLAGS="$(python3-config --includes)"
+    --disable-video --disable-audio --disable-v4l2 --disable-sdl --disable-opus
 
-  make dep
-  make -j"$NPROC"
-  make install # без sudo, пишет в $PREFIX_DIR
+  make
+  make install  # без sudo, пишет в $PREFIX_DIR
 
   cd "$SCRIPT_DIR"
 }
@@ -105,9 +99,8 @@ build_python_module() {
   log "Сборка и установка pjsua2..."
   cd "$SRC_DIR/pjsip-apps/src/swig/python"
 
-  make
-  # Установка в текущий активный virtualenv
-  pip install .
+  make -j"$NPROC"
+  pip install --force-reinstall .   # Установка в текущий активный virtualenv
 
   cd "$SCRIPT_DIR"
 }
@@ -115,12 +108,13 @@ build_python_module() {
 test_import() {
   log "Тестируем импорт pjsua2..."
   python - <<'PY'
-import pjsua2, sys, pathlib
-print("✔ pjsua2 импортирован. Расположение:", pathlib.Path(pjsua2.__file__).resolve())
-e = pjsua2.Endpoint()
-e.libCreate()
-print("✔ Endpoint создан успешно")
-e.libDestroy()
+import pjsua2, pathlib
+print("✔ pjsua2 импортирован из", pathlib.Path(pjsua2.__file__).resolve())
+ep = pjsua2.Endpoint()
+ep.libCreate()
+print("✔ Endpoint создан; версия PJSIP:",
+      pjsua2.Endpoint.instance().libVersion().full)
+ep.libDestroy()
 PY
 }
 
