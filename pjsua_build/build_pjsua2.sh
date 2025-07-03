@@ -46,18 +46,6 @@ install_apt_deps() {
     # libopencore-amrwb-dev libopencore-amrnb-dev libvo-amrwbenc-dev
 }
 
-create_venv() {
-  if [[ -d "$VENV_DIR" ]]; then
-    log "Virtualenv $VENV_DIR уже существует, пропускаем создание."
-  else
-    log "Создаём virtualenv ($VENV_DIR)..."
-    python3 -m venv "$VENV_DIR"
-  fi
-  # shellcheck disable=SC1090
-  source "$VENV_DIR/bin/activate"
-  pip install -U pip setuptools wheel
-}
-
 clone_pjsip() {
   git clone --branch "$PJ_VERSION" --depth 1 https://github.com/pjsip/pjproject.git "$SRC_DIR"
 }
@@ -124,7 +112,6 @@ PY
 log "PJSUA2 build script запущен (директория: $SCRIPT_DIR)"
 
 install_apt_deps
-create_venv
 clone_pjsip
 build_pjsip
 patch_activate
