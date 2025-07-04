@@ -67,22 +67,6 @@ build_pjsip() {
   cd "$SCRIPT_DIR"
 }
 
-patch_activate() {
-  ACT_FILE="$VENV_DIR/bin/activate"
-  MARKER="# >>> PJSIP LD_LIBRARY_PATH >>>"
-  if ! grep -q "$MARKER" "$ACT_FILE"; then
-    log "Прописываем LD_LIBRARY_PATH в activate..."
-    cat >> "$ACT_FILE" <<EOF
-
-$MARKER
-export LD_LIBRARY_PATH="\$VIRTUAL_ENV/../$PREFIX_DIR/lib:\${LD_LIBRARY_PATH:-}"
-# <<< PJSIP LD_LIBRARY_PATH <<<
-EOF
-  fi
-  # shellcheck disable=SC1090
-  source "$VENV_DIR/bin/activate"
-}
-
 build_python_module() {
   log "Сборка и установка pjsua2..."
   cd "$SRC_DIR/pjsip-apps/src/swig/python"
@@ -114,7 +98,6 @@ log "PJSUA2 build script запущен (директория: $SCRIPT_DIR)"
 install_apt_deps
 clone_pjsip
 build_pjsip
-patch_activate
 build_python_module
 test_import
 
