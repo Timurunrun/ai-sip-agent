@@ -24,7 +24,7 @@ def load_system_prompt() -> str:
         return "Твоя задача сказать, что телефония на техническом обслуживании, пока что пусть пишут в чат или на почту."
 
 def load_system_config() -> dict:
-    config_file = os.path.join(os.path.dirname(__file__), 'config.json')
+    config_file = os.path.join(os.path.dirname(__file__), 'system_config.json')
 
     try:
         with open(config_file, 'r', encoding='utf-8') as f:
