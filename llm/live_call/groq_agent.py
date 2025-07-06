@@ -43,6 +43,7 @@ class GroqAgent:
         self.system_prompt = f"{self.system_prompt}\n\n[ВОПРОСЫ ДЛЯ КЛИЕНТА]\n{questions_text}"
 
         self.config = load_system_config().get("Groq", {})
+        self.model = self.config.get("LLM", "")
 
         self.lock = asyncio.Lock()
         self.llm_busy = False
