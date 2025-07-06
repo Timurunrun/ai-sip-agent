@@ -47,14 +47,15 @@ install_apt_deps() {
 }
 
 create_venv() {
-  if [[ -d "$VENV_DIR" ]]; then
-    log "Virtualenv $VENV_DIR уже существует, пропускаем создание."
+  VENV_PATH="$SCRIPT_DIR/../$VENV_DIR"
+  if [[ -d "$VENV_PATH" ]]; then
+    log "Virtualenv $VENV_PATH уже существует, пропускаем создание."
   else
-    log "Создаём virtualenv ($VENV_DIR)..."
-    python3 -m venv "$VENV_DIR"
+    log "Создаём virtualenv ($VENV_PATH)..."
+    python3 -m venv "$VENV_PATH"
   fi
   # shellcheck disable=SC1090
-  source "$VENV_DIR/bin/activate"
+  source "$VENV_PATH/bin/activate"
   pip install -U pip setuptools wheel
 }
 
