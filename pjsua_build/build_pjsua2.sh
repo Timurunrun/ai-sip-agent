@@ -46,6 +46,18 @@ install_apt_deps() {
     # libopencore-amrwb-dev libopencore-amrnb-dev libvo-amrwbenc-dev
 }
 
+create_venv() {
+  if [[ -d "$VENV_DIR" ]]; then
+    log "Virtualenv $VENV_DIR уже существует, пропускаем создание."
+  else
+    log "Создаём virtualenv ($VENV_DIR)..."
+    python3 -m venv "$VENV_DIR"
+  fi
+  # shellcheck disable=SC1090
+  source "$VENV_DIR/bin/activate"
+  pip install -U pip setuptools wheel
+}
+
 clone_pjsip() {
   git clone --branch "$PJ_VERSION" --depth 1 https://github.com/pjsip/pjproject.git "$SRC_DIR"
 }
@@ -65,6 +77,22 @@ build_pjsip() {
   make install  # без sudo, пишет в $PREFIX_DIR
 
   cd "$SCRIPT_DIR"
+}
+
+patch_activate() {
+  ACT_FILE="$VENV_DIR/bin/activate"
+  MARKER="# >>> PJSIP LD_LIBRARY_PATH >>>"
+  if ! grep -q "$MARKER" "$ACT_FILE"; then
+    log "Прописываем LD_LIBRARY_PATH в activate..."
+    cat >> "$ACT_FILE" <<EOF
+
+$MARKER
+export LD_LIBRARY_PATH="\$VIRTUAL_ENV/../$PREFIX_DIR/lib:\${LD_LIBRARY_PATH:-}"
+# <<< PJSIP LD_LIBRARY_PATH <<<
+EOF
+  fi
+  # shellcheck disable=SC1090
+  source "$VENV_DIR/bin/activate"
 }
 
 build_python_module() {
@@ -96,8 +124,10 @@ PY
 log "PJSUA2 build script запущен (директория: $SCRIPT_DIR)"
 
 install_apt_deps
+create_venv
 clone_pjsip
 build_pjsip
+patch_activate
 build_python_module
 test_import
 
