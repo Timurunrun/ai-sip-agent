@@ -26,6 +26,8 @@ SRC_DIR="pjproject"
 NPROC="$(nproc)"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_PATH="$SCRIPT_DIR/../$VENV_DIR"
+
 cd "$SCRIPT_DIR"
 
 log()  { echo -e "\e[1;32m[+] $*\e[0m"; }
@@ -47,7 +49,6 @@ install_apt_deps() {
 }
 
 create_venv() {
-  VENV_PATH="$SCRIPT_DIR/../$VENV_DIR"
   if [[ -d "$VENV_PATH" ]]; then
     log "Virtualenv $VENV_PATH уже существует, пропускаем создание."
   else
@@ -81,7 +82,7 @@ build_pjsip() {
 }
 
 patch_activate() {
-  ACT_FILE="$VENV_DIR/bin/activate"
+  ACT_FILE="$VENV_PATH/bin/activate"
   MARKER="# >>> PJSIP LD_LIBRARY_PATH >>>"
   if ! grep -q "$MARKER" "$ACT_FILE"; then
     log "Прописываем LD_LIBRARY_PATH в activate..."
@@ -93,7 +94,7 @@ export LD_LIBRARY_PATH="\$VIRTUAL_ENV/../$PREFIX_DIR/lib:\${LD_LIBRARY_PATH:-}"
 EOF
   fi
   # shellcheck disable=SC1090
-  source "$VENV_DIR/bin/activate"
+  source "$VENV_PATH/bin/activate"
 }
 
 build_python_module() {
