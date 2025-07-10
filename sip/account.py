@@ -44,6 +44,19 @@ class Account(pj.Account):
 
         ci = call.getInfo()
         print(f"[PJSUA] Звонок с номера: {ci.remoteUri}")
+        
+        if "sipvicious" in ci.remoteUri.lower():
+            print("[PJSUA] Обнаружен звонок от sipvicious, отклоняем...")
+            try:
+                call_prm = pj.CallOpParam()
+                call_prm.statusCode = 403
+                call.answer(call_prm)
+                call.hangup()
+                return
+            except Exception as e:
+                print(f"[PJSUA] Ошибка при отклонении звонка от sipvicious: {e}")
+                return
+        
         match = re.search(r'sip:([^@>]+)@', ci.remoteUri)
         if match:
             phone_number = match.group(1)
