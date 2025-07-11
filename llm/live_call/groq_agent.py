@@ -148,30 +148,33 @@ class GroqAgent:
                     max_tokens=self.config.get("max_tokens", 1024)
                 )
 
-                msg = response.choices[0].message          # ChatCompletionMessage
+                msg = response.choices[0].message
                 tool_calls = getattr(msg, "tool_calls", None)
 
                 def _add(m):  # гарантируем сериализуемость
                     history.append({"role": m.role, "content": m.content})
 
-                if tool_calls:                             # первая фаза – tool call
+                if tool_calls:
                     _add(msg)
                     for tc in tool_calls:
                         if tc.function.name == "hangup_call":
-                            self._hangup_call(**json.loads(tc.function.arguments or "{}"))
-                            history.append({"role": "tool",
-                                            "tool_call_id": tc.id,
-                                            "name": "hangup_call",
-                                            "content": "OK"})
-                    second = self.client.chat.completions.create(
-                        model=self.config.get("LLM", ""),
-                        messages=history
-                    )
-                    msg = second.choices[0].message        # финальный ответ
+                            full_reply = "До свидания."
+                            self._send_to_tts_and_play(full_reply)
 
-                full_reply = msg.content
-                self._send_to_tts_and_play(full_reply)     # озвучиваем
-                _add(msg)                                  # фиксируем в истории
+                            self._hangup_call(**json.loads(tc.function.arguments or "{}"))
+                            history.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tc.id,
+                                    "name": "hangup_call",
+                                    "content": "OK"
+                                }
+                            )
+                else:
+                    full_reply = msg.content
+                    self._send_to_tts_and_play(full_reply)
+                    _add(msg)
+
                 self._save_history(lead_id, history)
                 self._log_conversation_history(history, lead_id)
                 return full_reply
@@ -223,10 +226,17 @@ class GroqAgent:
             return asyncio.run(self.process_async(user_text))
 
     @staticmethod
-    def _hangup_call(reason: str = ""):
+    def _hangup_call(reason: str = "", delay: float = 3.0):
+        """Кладём команду сброса с задержкой, чтобы TTS успело договорить."""
         from sip.command_queue import queue_command
-        queue_command("hangup", reason=reason)
-        logging.info(f"[GROQ] Запрошено завершение звонка [{reason}]")
+        import threading, logging
+
+        def _enqueue():
+            queue_command("hangup", reason=reason)
+            logging.info(f"[GROQ] Сброс вызова в очереди (reason='{reason}')")
+
+        threading.Timer(max(0.1, delay), _enqueue).start()
+        logging.info(f"[GROQ] Сброс вызова запланирован через {delay:.1f}s")
 
 # Глобальные функции для совместимости
 _llm_agent_instance = None
