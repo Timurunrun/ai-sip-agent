@@ -5,6 +5,7 @@ import os
 from config import load_config
 from sip.endpoint import create_endpoint
 from sip.account import Account
+from sip.command_queue import process_command_queue
 from crm.crm_api import enrich_funnel_config_with_crm, enrich_post_funnel_config_with_crm
 
 def main():
@@ -41,6 +42,8 @@ def main():
                 if hasattr(sip_event_queue, 'current_call') and sip_event_queue.current_call:
                     from sip.audio_player import process_audio_queue
                     process_audio_queue()
+
+                    process_command_queue()
                     
                     # Проверяем отложенное воспроизведение аудио в текущем звонке
                     sip_event_queue.current_call.check_pending_audio()
