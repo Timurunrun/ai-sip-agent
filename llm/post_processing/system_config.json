@@ -1,8 +1,8 @@
 {
     "Groq": {
-        "LLM": "qwen/qwen3-32b",
-        "temperature": 0.52,
+        "LLM": "openai/gpt-oss-20b",
+        "temperature": 0.56,
         "max_tokens": 40960,
-        "reasoning_effort": "default"
+        "reasoning_effort": "medium"
     }
 }

@@ -3,7 +3,7 @@ import json
 import logging
 import os
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List
 
 from groq import Groq
@@ -73,30 +73,29 @@ class PostCallProcessor:
         schema_text = ',\n'.join(schema_fields)
         question_text = '\n- '.join([''] + question_fields)  # будет md-список вопросов
         
-        system_prompt = f"""
-Ты — аналитик истории звонков. Проанализируй диалог между менеджером и клиентом и извлеки ответы на все указанные вопросы.
+        # Загружаем шаблон системного промта из файла и подставляем динамические части
+        template_path = os.path.join(os.path.dirname(__file__), 'system_prompt.md')
 
-[ВОПРОСЫ]
-{question_text}
+        now_local = datetime.now(timezone.utc)
+        weekday_names = [
+            "понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"
+        ]
+        current_date_local = now_local.strftime("%Y-%m-%d")
+        current_weekday_local = weekday_names[now_local.weekday()]
+        try:
+            with open(template_path, 'r', encoding='utf-8') as f:
+                template = f.read()
+            system_prompt = (
+                template
+                .replace('{{QUESTION_TEXT}}', question_text)
+                .replace('{{SCHEMA_TEXT}}', schema_text)
+                .replace('{{CURRENT_DATE_LOCAL}}', current_date_local)
+                .replace('{{CURRENT_WEEKDAY_LOCAL}}', current_weekday_local)
+            )
+        except Exception as e:
+            logging.error(f"[POST_PROCESSOR] Не удалось загрузить файл с системным промтом: {e}")
+            raise
 
-[СХЕМА JSON]
-Выдай результат в формате JSON ОБЯЗАТЕЛЬНО со следующей структурой:
-{{
-   {schema_text}
-}}
-
-[ПРАВИЛА АНАЛИЗА]
-- БУДЬ ВНИМАТЕЛЕН! Строго соблюдай соответствие ID вопросов/ответов и их значений.
-- Если на вопрос есть четкий ответ в диалоге — запиши его.
-- Если ответа нет — null.
-- НЕ придумывай данные, которых нет в диалоге.
-- Для полей с вариантами ответов возвращай ИМЕННО ID вариантов (число), НЕ текстовое значение.
-- Для одиночного выбора (select) возвращай ОДИН ID: 123.
-- Для множественного выбора (multiselect) возвращай массив ID: [123, 456].
-- СТРОГО соблюдай типы данных из схемы: строки в кавычках, числа и ID без кавычек, булевы как true/false.
-Ответ должен содержать ТОЛЬКО JSON-объект с соответствующей условию структурой БЕЗ каких-либо дополнительных комментариев (НЕЛЬЗЯ \\n)
-"""
-        
         return system_prompt
 
     def _map_crm_type_to_json_type(self, crm_type: str, enums: List[Dict] = None) -> str:
@@ -296,7 +295,7 @@ class PostCallProcessor:
                     messages=messages,
                     response_format={"type": "json_object"},
                     temperature=self.config.get("temperature", 0.5),
-                    reasoning_effort=self.config.get("reasoning_effort", "none"),
+                    reasoning_effort=self.config.get("reasoning_effort", "medium"),
                     max_tokens=self.config.get("max_tokens", 40960)
                 )
                 

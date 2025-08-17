@@ -92,7 +92,15 @@ class CRMUpdater:
             
             if processed_fields == 0:
                 logging.warning(f"[CRM_UPDATER] Нет полей для обновления лида {lead_id}")
-                return False
+                # Если нет полей для обновления, добавляем приписку в лог-файл и считаем операцию успешной
+                try:
+                    self._append_note_to_latest_analysis_file(
+                        lead_id=str(lead_id),
+                        note="Нет полей для обновления (все значения null)."
+                    )
+                except Exception as e:
+                    logging.error(f"[CRM_UPDATER] Не удалось записать приписку о пустом обновлении полей CRM в файл анализа для лида {lead_id}: {e}")
+                return True
             
             if success_count == processed_fields:
                 logging.info(f"[CRM_UPDATER] Успешно обновлены ВСЕ поля ({success_count}/{processed_fields}) лида {lead_id}")
@@ -111,6 +119,60 @@ class CRMUpdater:
         except Exception as e:
             logging.error(f"[CRM_UPDATER] Ошибка при обновлении лида {lead_id}: {e}")
             return False
+
+    def _append_note_to_latest_analysis_file(self, lead_id: str, note: str) -> None:
+        """
+        Находит последний файл анализа для лида и добавляет к нему приписку о результате обновления CRM.
+
+        Формат файлов: post_analysis_lead_{lead_id}_{timestamp}_attempt_{attempt}.json
+        Файлы создаются модулем PostCallProcessor в папке tmp рядом с этим модулем.
+        """
+        try:
+            tmp_dir = os.path.join(os.path.dirname(__file__), '..', 'tmp')
+            if not os.path.isdir(tmp_dir):
+                logging.debug(f"[CRM_UPDATER] Папка tmp не найдена: {tmp_dir}")
+                return
+
+            prefix = f"post_analysis_lead_{lead_id}_"
+            candidates = [
+                f for f in os.listdir(tmp_dir)
+                if f.startswith(prefix) and f.endswith('.json')
+            ]
+
+            if not candidates:
+                logging.debug(f"[CRM_UPDATER] Файлы анализа для лида {lead_id} не найдены в {tmp_dir}")
+                return
+
+            # Берем самый новый по времени модификации
+            latest = max(
+                candidates,
+                key=lambda name: os.path.getmtime(os.path.join(tmp_dir, name))
+            )
+            latest_path = os.path.join(tmp_dir, latest)
+
+            with open(latest_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            # Добавляем приписку (на верхнем уровне под ключом crm_update_note)
+            # Если ранее была приписка, преобразуем в список заметок
+            existing_note = data.get('crm_update_note')
+            if existing_note is None:
+                data['crm_update_note'] = note
+            else:
+                # Храним как список
+                if isinstance(existing_note, list):
+                    existing_note.append(note)
+                    data['crm_update_note'] = existing_note
+                else:
+                    data['crm_update_note'] = [existing_note, note]
+
+            with open(latest_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            logging.info(f"[CRM_UPDATER] Приписка добавлена в файл анализа: {os.path.basename(latest_path)}")
+
+        except Exception as e:
+            # Не прерываем основной поток выполнения из-за проблем с лог-файлом
+            logging.error(f"[CRM_UPDATER] Ошибка добавления приписки в файл анализа лида {lead_id}: {e}")
 
     def _update_single_field(self, lead_id: str, field_id: int, value: Any, field_info: Dict[str, Any]) -> bool:
         """

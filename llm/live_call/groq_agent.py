@@ -3,6 +3,7 @@ import json
 import logging
 import os
 from typing import List, Dict, Any, Optional
+from datetime import datetime, timezone
 
 from groq import Groq
 from crm.crm_api import load_enriched_funnel_config
@@ -15,13 +16,27 @@ _llm_agent_instance = None
 
 def load_system_prompt() -> str:
     prompt_file = os.path.join(os.path.dirname(__file__), 'system_prompt.md')
-    
+
+    now_local = datetime.now(timezone.utc)
+    weekday_names = [
+        "понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"
+    ]
+    current_date_local = now_local.strftime("%Y-%m-%d")
+    current_weekday_local = weekday_names[now_local.weekday()]
+
     try:
         with open(prompt_file, 'r', encoding='utf-8') as f:
-            return f.read().strip()
+            template = f.read().strip()
+
+        system_prompt = (
+            template
+            .replace('{{CURRENT_DATE_LOCAL}}', current_date_local)
+            .replace('{{CURRENT_WEEKDAY_LOCAL}}', current_weekday_local)
+        )
+        return system_prompt
     except Exception as e:
         logging.error(f"[GROQ] Ошибка загрузки системного промта: {e}")
-        return "Твоя задача сказать, что телефония на техническом обслуживании, пока что пусть пишут в чат или на почту."
+        return "Твоя задача сказать, что сейчас телефония на техническом обслуживании, пока что пусть пишут в чат или на почту."
 
 def load_system_config() -> dict:
     config_file = os.path.join(os.path.dirname(__file__), 'system_config.json')
