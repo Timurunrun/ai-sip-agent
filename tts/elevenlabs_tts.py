@@ -25,7 +25,6 @@ def load_tts_config() -> Dict[str, Any]:
         logging.error(f"[TTS] Ошибка чтения tts_config.json: {e}")
         return {}
 
-# Создаем папку для временных файлов (кроссплатформенно)
 _default_tmp = Path(tempfile.gettempdir()) / "pjsua_tts"
 TMP_DIR = _default_tmp
 TMP_DIR.mkdir(parents=True, exist_ok=True)
@@ -34,7 +33,6 @@ class ElevenLabsTTS:
     def __init__(self, api_key: Optional[str] = None, config: Optional[Dict[str, Any]] = None):
         cfg = config or load_tts_config()
         self.api_key = api_key or os.getenv('ELEVENLABS_API_KEY')
-        # Разрешаем только дефолт для URL, остальные параметры обязательны в конфиге
         self.base_url = cfg.get("base_url", "https://api.elevenlabs.io")
         required_keys = ["voice_id", "model_id", "output_format", "optimize_streaming_latency", "voice_settings"]
         missing = [k for k in required_keys if k not in cfg]
@@ -45,17 +43,6 @@ class ElevenLabsTTS:
         self.output_format_default = cfg["output_format"]
         self.optimize_streaming_latency = cfg["optimize_streaming_latency"]
         self.voice_settings = cfg["voice_settings"]
-        # Переопределяем TMP_DIR при наличии в конфиге
-        tmp_dir_cfg = cfg.get("tmp_dir")
-        if tmp_dir_cfg:
-            try:
-
-                tmp = Path(tmp_dir_cfg)
-                tmp.mkdir(parents=True, exist_ok=True)
-                global TMP_DIR
-                TMP_DIR = tmp
-            except Exception as e:
-                logging.warning(f"[TTS] Не удалось использовать tmp_dir из конфига ({tmp_dir_cfg}): {e}. Используется {TMP_DIR}")
         
         if not self.api_key:
             raise ValueError("ElevenLabs API key не найден в переменных окружения")
