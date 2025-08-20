@@ -1,29 +1,68 @@
 import os
+import json
 import requests
 import time
 import logging
-from typing import Optional
+from typing import Optional, Dict, Any
 import threading
 from pathlib import Path
 import subprocess
+import tempfile
 
-# Создаем папку для временных файлов
-TMP_DIR = Path("/tmp/pjsua_tts")
-TMP_DIR.mkdir(exist_ok=True)
+def load_tts_config() -> Dict[str, Any]:
+    """Загружает конфигурацию TTS из tts_config.json в текущей директории модуля."""
+    config_path = Path(__file__).with_name('tts_config.json')
+    if not config_path.exists():
+        logging.warning(f"[TTS] Файл конфигурации не найден: {config_path}. Будут использованы значения по умолчанию.")
+        return {}
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                return data.get('ElevenLabs', data)
+            return {}
+    except Exception as e:
+        logging.error(f"[TTS] Ошибка чтения tts_config.json: {e}")
+        return {}
+
+# Создаем папку для временных файлов (кроссплатформенно)
+_default_tmp = Path(tempfile.gettempdir()) / "pjsua_tts"
+TMP_DIR = _default_tmp
+TMP_DIR.mkdir(parents=True, exist_ok=True)
 
 class ElevenLabsTTS:
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, config: Optional[Dict[str, Any]] = None):
+        cfg = config or load_tts_config()
         self.api_key = api_key or os.getenv('ELEVENLABS_API_KEY')
-        self.voice_id = "wqS2JTzjt7fARO3ZxCVZ"
-        self.model_id = "eleven_flash_v2_5"
-        self.base_url = "https://api.elevenlabs.io"
+        # Разрешаем только дефолт для URL, остальные параметры обязательны в конфиге
+        self.base_url = cfg.get("base_url", "https://api.elevenlabs.io")
+        required_keys = ["voice_id", "model_id", "output_format", "optimize_streaming_latency", "voice_settings"]
+        missing = [k for k in required_keys if k not in cfg]
+        if missing:
+            raise ValueError(f"[TTS] В tts_config.json отсутствуют обязательные поля: {', '.join(missing)}")
+        self.voice_id = cfg["voice_id"]
+        self.model_id = cfg["model_id"]
+        self.output_format_default = cfg["output_format"]
+        self.optimize_streaming_latency = cfg["optimize_streaming_latency"]
+        self.voice_settings = cfg["voice_settings"]
+        # Переопределяем TMP_DIR при наличии в конфиге
+        tmp_dir_cfg = cfg.get("tmp_dir")
+        if tmp_dir_cfg:
+            try:
+
+                tmp = Path(tmp_dir_cfg)
+                tmp.mkdir(parents=True, exist_ok=True)
+                global TMP_DIR
+                TMP_DIR = tmp
+            except Exception as e:
+                logging.warning(f"[TTS] Не удалось использовать tmp_dir из конфига ({tmp_dir_cfg}): {e}. Используется {TMP_DIR}")
         
         if not self.api_key:
             raise ValueError("ElevenLabs API key не найден в переменных окружения")
             
         logging.info(f"[TTS] ElevenLabs TTS инициализирован с voice_id: {self.voice_id}")
 
-    def text_to_speech(self, text: str, output_format: str = "mp3_44100_96") -> Optional[str]:
+    def text_to_speech(self, text: str, output_format: Optional[str] = None) -> Optional[str]:
         """
         Преобразует текст в аудио через ElevenLabs API
         
@@ -45,22 +84,15 @@ class ElevenLabsTTS:
             "Content-Type": "application/json"
         }
         
-        # Используем параметры для максимальной скорости
         params = {
-            "output_format": output_format,
-            "optimize_streaming_latency": 4
+            "output_format": output_format or self.output_format_default,
+            "optimize_streaming_latency": self.optimize_streaming_latency,
         }
         
         data = {
             "text": text,
             "model_id": self.model_id,
-            "voice_settings": {
-                "stability": 0.6,
-                "speed": 1.07,
-                "similarity_boost": 0.9,
-                "style": 0,
-                "use_speaker_boost": False,
-            }
+            "voice_settings": self.voice_settings,
         }
         
         try:

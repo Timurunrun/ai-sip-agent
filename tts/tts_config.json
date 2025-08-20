@@ -1,0 +1,16 @@
+{
+  "ElevenLabs": {
+    "base_url": "https://api.elevenlabs.io",
+    "voice_id": "wqS2JTzjt7fARO3ZxCVZ",
+    "model_id": "eleven_flash_v2_5",
+    "output_format": "mp3_44100_96",
+    "optimize_streaming_latency": 3,
+    "voice_settings": {
+      "stability": 0.6,
+      "speed": 1.07,
+      "similarity_boost": 0.9,
+      "style": 0,
+      "use_speaker_boost": false
+    }
+  }
+}
