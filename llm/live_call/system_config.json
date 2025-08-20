@@ -1,7 +1,8 @@
 {
     "Groq": {
-        "LLM": "meta-llama/llama-4-maverick-17b-128e-instruct",
-        "temperature": 0.56,
-        "max_tokens": 1024
+        "LLM": "openai/gpt-oss-120b",
+        "temperature": 1,
+        "max_tokens": 8192,
+        "reasoning_effort": "medium"
     }
 }

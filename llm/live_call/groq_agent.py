@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 
@@ -46,6 +47,7 @@ def load_system_config() -> dict:
             return json.load(f)
     except Exception as e:
         logging.error(f"[GROQ] Ошибка загрузки конфигурации: {e}")
+    return {}
 
 class GroqAgent:
     def __init__(self):
@@ -63,17 +65,17 @@ class GroqAgent:
         self.tools = [{
             "type": "function",
             "function": {
-            "name": "hangup_call",
-            "description": "Сбросить текущий телефонный звонок",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                "reason": {
-                    "type": "string",
-                    "description": "Причина завершения звонка",
+                "name": "hangup_call",
+                "description": "Сбросить текущий телефонный звонок",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "reason": {
+                            "type": "string",
+                            "description": "Причина завершения звонка",
+                        }
+                    }
                 }
-                }
-            }
             }
         }]
 
@@ -155,19 +157,23 @@ class GroqAgent:
                 groq_messages = self._format_history_for_groq(history)
                 
                 response = self.client.chat.completions.create(
-                    model=self.config.get("LLM", ""),
+                    model=self.model,
                     messages=groq_messages,
                     tools=self.tools,
                     tool_choice="auto",
                     temperature=self.config.get("temperature", 0.6),
+                    reasoning_effort=self.config.get("reasoning_effort", "medium"),
                     max_tokens=self.config.get("max_tokens", 1024)
                 )
 
                 msg = response.choices[0].message
                 tool_calls = getattr(msg, "tool_calls", None)
 
-                def _add(m):  # гарантируем сериализуемость
-                    history.append({"role": m.role, "content": m.content})
+                def _add(m):  # гарантируем сериализуемость и убираем размышления
+                    content = m.content
+                    if getattr(m, "role", "") == "assistant":
+                        content = self._sanitize_model_output(content)
+                    history.append({"role": m.role, "content": content})
 
                 if tool_calls:
                     _add(msg)
@@ -187,7 +193,9 @@ class GroqAgent:
                             )
                 else:
                     full_reply = msg.content
-                    self._send_to_tts_and_play(full_reply)
+
+                    speak_text = self._sanitize_model_output(full_reply)
+                    self._send_to_tts_and_play(speak_text)
                     _add(msg)
 
                 self._save_history(lead_id, history)
@@ -199,6 +207,20 @@ class GroqAgent:
                 
             finally:
                 self.llm_busy = False
+
+    @staticmethod
+    def _sanitize_model_output(text: str) -> str:
+        """
+        Удаляет размышления reasoning-моделей (блоки <think>...</think>)
+        перед передачей в TTS.
+        """
+        if not text:
+            return text
+        # Убираем теги <think>...</think>
+        cleaned = re.sub(r"<think>[\s\S]*?</think>", "", text, flags=re.IGNORECASE)
+        # Убираем лишние пробелы/переводы строк
+        cleaned = cleaned.strip()
+        return cleaned
 
     def _log_conversation_history(self, history: List[Dict[str, Any]], lead_id: Optional[str]) -> None:
         log_lines = [f"\n========== ИСТОРИЯ ДИАЛОГА ЛИДА {lead_id or 'UNKNOWN'} =========="]
