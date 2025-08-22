@@ -309,7 +309,7 @@ class Call(pj.Call):
                 return
             
             # Загружаем историю диалога
-            from llm.live_call.groq_agent import get_llm_agent
+            from llm.live_call import get_llm_agent
             agent = get_llm_agent()
             history = agent._load_history(self.lead_id)
             

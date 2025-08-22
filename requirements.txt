@@ -6,3 +6,4 @@ websockets
 dotenv
 requests
 ffmpeg
+openai

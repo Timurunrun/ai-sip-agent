@@ -4,7 +4,7 @@ import asyncio
 import websockets
 import json
 import logging
-from llm.live_call.groq_agent import process_transcript, process_transcript_async
+from llm.live_call import process_transcript, process_transcript_async
 import time
 
 logging.basicConfig(
