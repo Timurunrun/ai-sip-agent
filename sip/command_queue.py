@@ -14,13 +14,17 @@ def process_command_queue():
     import pjsua2 as pj
     while not _cmd_q.empty():
         cmd, kw = _cmd_q.get_nowait()
-        if cmd == "hangup" and Call.current:
+        if cmd in ("hangup", "hangup_after_playback") and Call.current:
             try:
-                prm = pj.CallOpParam()
-                if "statusCode" in kw:
-                    prm.statusCode = kw["statusCode"]
-                Call.current.hangup(prm)
-                logging.info(f"[PJSUA] Успешный сброс вызова ({kw.get('reason','')})")
+                if cmd == "hangup":
+                    prm = pj.CallOpParam()
+                    if "statusCode" in kw:
+                        prm.statusCode = kw["statusCode"]
+                    Call.current.hangup(prm)
+                    logging.info(f"[PJSUA] Успешный сброс вызова ({kw.get('reason','')})")
+                else:  # hangup_after_playback
+                    Call.current.request_hangup_after_playback(kw.get('reason',''), immediate=kw.get('immediate', False))
+                    logging.info(f"[PJSUA] Отложенный сброс вызова запрошен ({kw.get('reason','')})")
             except Exception as e:
                 logging.error(f"[PJSUA] Ошибка сброса вызова: {e}")
         _cmd_q.task_done()

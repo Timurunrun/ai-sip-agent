@@ -5,8 +5,10 @@ import wave
 import pjsua2 as pj
 from stt.deepgram_stt import DeepgramSTTSession
 
+
 class Call(pj.Call):
     current = None
+
     def __init__(self, acc, call_id=pj.PJSUA_INVALID_ID):
         super().__init__(acc, call_id)
         self.acc = acc
@@ -26,6 +28,9 @@ class Call(pj.Call):
         self._greeting_played = False
         self._greeting_pending = False
         self._greeting_ready_at = 0.0
+
+        self._pending_hangup = False
+        self._pending_hangup_reason = ""
         Call.current = self
 
     def onCallState(self, prm):
@@ -154,6 +159,19 @@ class Call(pj.Call):
                 elif elapsed_time > self._max_playback_duration:
                     print(f"[AUDIO] Принудительная остановка воспроизведения по таймауту ({self._max_playback_duration}с)")
                     self.stop_audio_playback()
+
+            # Если нет активного плеера и запрошен отложенный hangup — выполняем
+            if self._pending_hangup and not self._player:
+                try:
+                    import pjsua2 as pj
+                    prm = pj.CallOpParam()
+                    self.hangup(prm)
+                    print(f"[CALL] Отложенное завершение вызова выполнено ({self._pending_hangup_reason})")
+                except Exception as e:
+                    print(f"[CALL] Ошибка при отложенном завершении: {e}")
+                finally:
+                    self._pending_hangup = False
+                    self._pending_hangup_reason = ""
                 
         except Exception as e:
             print(f"[AUDIO] Ошибка в check_pending_audio: {e}")
@@ -235,6 +253,34 @@ class Call(pj.Call):
             self._player_start_time = 0
             self._current_audio_duration = 0
             return False
+
+    def request_hangup_after_playback(self, reason: str = "", immediate: bool = False):
+        """Помечает вызов на завершение после окончания текущего аудио.
+
+        Если immediate=True и нет активного плеера — завершает сразу.
+        Если immediate=False и плеер ещё не стартовал (но ожидается) — ждёт до окончания будущего воспроизведения.
+        """
+        if not self._pending_hangup:
+            self._pending_hangup_reason = reason or ""
+
+        if not self._player:
+            if immediate:
+                try:
+                    import pjsua2 as pj
+                    prm = pj.CallOpParam()
+                    self.hangup(prm)
+                    print(f"[CALL] Немедленное завершение вызова ({self._pending_hangup_reason})")
+                except Exception as e:
+                    print(f"[CALL] Ошибка немедленного завершения: {e}")
+                return
+            # Просто ставим флаг и ждём (check_pending_audio выполнит hangup когда плеер будет остановлен или так и не начнётся)
+            self._pending_hangup = True
+            print(f"[CALL] Запрошено завершение (ожидание воспроизведения) ({self._pending_hangup_reason})")
+            return
+
+        # Плеер активен — дождёмся окончания
+        self._pending_hangup = True
+        print(f"[CALL] Запрошено завершение после воспроизведения ({self._pending_hangup_reason})")
 
     def start_audio_streaming(self, media_index):
         if self.audio_streaming:

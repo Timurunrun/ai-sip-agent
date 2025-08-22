@@ -31,6 +31,17 @@ def queue_audio_for_playback(audio_file_path):
         logging.error("[AUDIO] Очередь воспроизведения переполнена")
 
 
+def clear_audio_queue():
+    """Очищает очередь ожидающих воспроизведения аудиофайлов."""
+    try:
+        while not _audio_queue.empty():
+            _audio_queue.get_nowait()
+            _audio_queue.task_done()
+        logging.info("[AUDIO] Очередь аудио очищена")
+    except Exception as e:
+        logging.error(f"[AUDIO] Ошибка очистки очереди: {e}")
+
+
 def process_audio_queue():
     """
     Обрабатывает очередь аудиофайлов для воспроизведения.

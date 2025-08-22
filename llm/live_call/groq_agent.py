@@ -155,6 +155,7 @@ class GroqAgent:
                 history = self._load_history(lead_id) if lead_id else []
                 history.append({"role": "user", "content": user_text})
                 groq_messages = self._format_history_for_groq(history)
+                full_reply = ""
                 
                 response = self.client.chat.completions.create(
                     model=self.model,
@@ -169,8 +170,10 @@ class GroqAgent:
                 msg = response.choices[0].message
                 tool_calls = getattr(msg, "tool_calls", None)
 
-                def _add(m):  # гарантируем сериализуемость и убираем размышления
-                    content = m.content
+                def _add(m):
+                    content = m.content or ""
+                    if isinstance(content, str) and content.strip().lower() in {"none", "null"}:
+                        content = ""
                     if getattr(m, "role", "") == "assistant":
                         content = self._sanitize_model_output(content)
                     history.append({"role": m.role, "content": content})
@@ -179,23 +182,32 @@ class GroqAgent:
                     _add(msg)
                     for tc in tool_calls:
                         if tc.function.name == "hangup_call":
-                            full_reply = "До свидания."
-                            self._send_to_tts_and_play(full_reply)
+                            args = json.loads(tc.function.arguments or "{}")
+                            reason = args.get("reason", "")
+                            speak_text = self._sanitize_model_output(msg.content or "")
 
-                            self._hangup_call(**json.loads(tc.function.arguments or "{}"))
-                            history.append(
-                                {
-                                    "role": "tool",
-                                    "tool_call_id": tc.id,
-                                    "name": "hangup_call",
-                                    "content": "OK"
-                                }
-                            )
+                            from sip.command_queue import queue_command
+
+                            if not speak_text:
+                                # Fallback-фраза, если модель не дала текста
+                                speak_text = "Спасибо за звонок, всего доброго, до свидания."
+
+                            # Озвучиваем и после воспроизведения завершаем
+                            self._send_to_tts_and_play(speak_text)
+                            queue_command("hangup_after_playback", reason=reason, immediate=False)
+                            full_reply = speak_text
+
+                            history.append({
+                                "role": "tool",
+                                "tool_call_id": tc.id,
+                                "name": "hangup_call",
+                                "content": "OK"
+                            })
                 else:
-                    full_reply = msg.content
-
+                    full_reply = msg.content or ""
                     speak_text = self._sanitize_model_output(full_reply)
-                    self._send_to_tts_and_play(speak_text)
+                    if speak_text:
+                        self._send_to_tts_and_play(speak_text)
                     _add(msg)
 
                 self._save_history(lead_id, history)
@@ -240,13 +252,12 @@ class GroqAgent:
         def tts_callback(audio_filepath: Optional[str]) -> None:
             if audio_filepath and os.path.exists(audio_filepath):
                 logging.info(f"[TTS] Аудиофайл готов: {audio_filepath}")
-                # Добавляем файл в очередь воспроизведения (безопасно из любого потока)
                 from sip.audio_player import queue_audio_for_playback
                 queue_audio_for_playback(audio_filepath)
                 logging.info(f"[TTS] Файл добавлен в очередь: {os.path.basename(audio_filepath)}")
             else:
                 logging.error("[TTS] Не удалось создать аудиофайл")
-        
+
         # Асинхронно создаем аудио и добавляем в очередь
         text_to_speech_async(text, tts_callback)
 
@@ -263,17 +274,10 @@ class GroqAgent:
             return asyncio.run(self.process_async(user_text))
 
     @staticmethod
-    def _hangup_call(reason: str = "", delay: float = 3.0):
-        """Кладём команду сброса с задержкой, чтобы TTS успело договорить."""
+    def _hangup_call(reason: str = ""):
+        """Помещает команду завершения вызова после воспроизведения аудио."""
         from sip.command_queue import queue_command
-        import threading, logging
-
-        def _enqueue():
-            queue_command("hangup", reason=reason)
-            logging.info(f"[GROQ] Сброс вызова в очереди (reason='{reason}')")
-
-        threading.Timer(max(0.1, delay), _enqueue).start()
-        logging.info(f"[GROQ] Сброс вызова запланирован через {delay:.1f}s")
+        queue_command("hangup_after_playback", reason=reason)
 
 # Глобальные функции для совместимости
 _llm_agent_instance = None
