@@ -24,6 +24,8 @@ class Call(pj.Call):
         self._max_playback_duration = 30
         self._current_audio_duration = 0
         self._greeting_played = False
+        self._greeting_pending = False
+        self._greeting_ready_at = 0.0
         Call.current = self
 
     def onCallState(self, prm):
@@ -93,21 +95,11 @@ class Call(pj.Call):
                 except Exception as e:
                     print(f"[PJSUA] Не удалось получить информацию о кодеке: {e}")
                 self.start_audio_streaming(mi.index)
-
-                if not self._greeting_played:
-                    try:
-                        greeting_path = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'audio', 'opening.wav'))
-                        if os.path.exists(greeting_path):
-                            played = self.play_audio_file(greeting_path)
-                            if played:
-                                print(f"[AUDIO] Приветствие проигрывается: {greeting_path}")
-                                self._greeting_played = True
-                            else:
-                                print(f"[AUDIO] Не удалось начать воспроизведение приветствия: {greeting_path}")
-                        else:
-                            print(f"[AUDIO] Файл приветствия не найден: {greeting_path}")
-                    except Exception as e:
-                        print(f"[AUDIO] Ошибка при попытке воспроизвести приветствие: {e}")
+                # Планируем приветствие с задержкой (2 секунды) — выполняем потом в основном цикле
+                if not self._greeting_played and not self._greeting_pending:
+                    self._greeting_pending = True
+                    self._greeting_ready_at = time.time() + 2.0
+                    print("[AUDIO] Приветствие запланировано (через 2 сек)")
 
     def connect_stt_session(self, filename):
         self._recording_filename = filename
@@ -131,6 +123,24 @@ class Call(pj.Call):
         Должен вызываться из основного потока.
         """
         try:
+            # Если запланировано приветствие и пришло время — запускаем
+            if self._greeting_pending and not self._greeting_played and time.time() >= self._greeting_ready_at:
+                try:
+                    greeting_path = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'audio', 'opening.wav'))
+                    if os.path.exists(greeting_path):
+                        played = self.play_audio_file(greeting_path)
+                        if played:
+                            print(f"[AUDIO] Приветствие проигрывается: {greeting_path}")
+                            self._greeting_played = True
+                        else:
+                            print(f"[AUDIO] Не удалось начать воспроизведение приветствия: {greeting_path}")
+                    else:
+                        print(f"[AUDIO] Файл приветствия не найден: {greeting_path}")
+                    self._greeting_pending = False
+                except Exception as e:
+                    print(f"[AUDIO] Ошибка при запуске приветствия: {e}")
+                    self._greeting_pending = False
+
             # Проверка окончания воспроизведения
             if (self._player and self._player_start_time > 0):
                 elapsed_time = time.time() - self._player_start_time
