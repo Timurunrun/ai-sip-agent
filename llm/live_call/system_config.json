@@ -7,6 +7,6 @@
     },
     "OpenAI": {
         "LLM": "gpt-5",
-        "max_tokens": 4096
+        "reasoning": {"effort": "medium"}
     }
 }

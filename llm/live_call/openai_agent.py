@@ -187,13 +187,12 @@ class OpenAIAgent:
                 history.append({"role": "user", "content": user_text})
                 openai_messages = self._format_history_for_openai(history)
                 full_reply = ""
-
                 response = self.client.chat.completions.create(
                     model=self.model,
                     messages=openai_messages,
                     tools=self.tools,
                     tool_choice="auto",
-                    max_tokens=self.config.get("max_tokens", 1024)
+                    reasoning={"effort": self.config.get("reasoning", "medium")},
                 )
 
                 msg = response.choices[0].message
