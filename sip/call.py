@@ -22,8 +22,8 @@ class Call(pj.Call):
         self._player = None
         self._player_start_time = 0
         self._max_playback_duration = 30
-        self._current_audio_duration = 0  # Длительность текущего файла
-        Call.current = self
+        self._current_audio_duration = 0
+        self._greeting_played = False
 
     def onCallState(self, prm):
         ci = self.getInfo()
@@ -53,12 +53,14 @@ class Call(pj.Call):
                         # Сначала останавливаем передачу, затем очищаем плеер
                         if hasattr(self, '_audio_media') and self._audio_media:
                             self._player.stopTransmit(self._audio_media)
+                        
                         self._player = None
                         self._player_start_time = 0
                         self._current_audio_duration = 0
                     except Exception as e:
                         print(f"[PJSUA] Ошибка при освобождении плеера: {e}")
-                        self._player = None  # Принудительно очищаем
+                        
+                        self._player = None
                         self._player_start_time = 0
                         self._current_audio_duration = 0
             except Exception as e:
@@ -92,6 +94,36 @@ class Call(pj.Call):
                 except Exception as e:
                     print(f"[PJSUA] Не удалось получить информацию о кодеке: {e}")
                 self.start_audio_streaming(mi.index)
+                
+                # После активации медиа проигрываем приветствие
+                if not self._greeting_played:
+                    def _delayed_greeting():
+                        try:
+                            time.sleep(2.0)
+                            if self._greeting_played:
+                                return
+                            # Проверяем что звонок ещё активен и медиа есть
+                            try:
+                                ci_inner = self.getInfo()
+                                if ci_inner.stateText == "DISCONNECTED":
+                                    return
+                            except Exception:
+                                return
+                            if not self._audio_media:
+                                return
+                            greeting_path = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'audio', 'opening.wav'))
+                            if os.path.exists(greeting_path):
+                                played = self.play_audio_file(greeting_path)
+                                if played:
+                                    print(f"[AUDIO] Приветствие (c задержкой) проигрывается: {greeting_path}")
+                                    self._greeting_played = True
+                                else:
+                                    print(f"[AUDIO] Не удалось начать воспроизведение приветствия: {greeting_path}")
+                            else:
+                                print(f"[AUDIO] Файл приветствия не найден: {greeting_path}")
+                        except Exception as e:
+                            print(f"[AUDIO] Ошибка при отложенном воспроизведении приветствия: {e}")
+                    threading.Thread(target=_delayed_greeting, daemon=True).start()
 
     def connect_stt_session(self, filename):
         self._recording_filename = filename
