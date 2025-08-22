@@ -1,7 +1,7 @@
 {
     "Groq": {
         "LLM": "openai/gpt-oss-20b",
-        "temperature": 0.56,
+        "temperature": 0.59,
         "max_tokens": 40960,
         "reasoning_effort": "medium"
     }
