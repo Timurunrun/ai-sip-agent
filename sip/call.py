@@ -24,6 +24,7 @@ class Call(pj.Call):
         self._max_playback_duration = 30
         self._current_audio_duration = 0
         self._greeting_played = False
+        Call.current = self
 
     def onCallState(self, prm):
         ci = self.getInfo()
@@ -53,14 +54,12 @@ class Call(pj.Call):
                         # Сначала останавливаем передачу, затем очищаем плеер
                         if hasattr(self, '_audio_media') and self._audio_media:
                             self._player.stopTransmit(self._audio_media)
-                        
                         self._player = None
                         self._player_start_time = 0
                         self._current_audio_duration = 0
                     except Exception as e:
                         print(f"[PJSUA] Ошибка при освобождении плеера: {e}")
-                        
-                        self._player = None
+                        self._player = None  # Принудительно очищаем
                         self._player_start_time = 0
                         self._current_audio_duration = 0
             except Exception as e:
@@ -94,36 +93,21 @@ class Call(pj.Call):
                 except Exception as e:
                     print(f"[PJSUA] Не удалось получить информацию о кодеке: {e}")
                 self.start_audio_streaming(mi.index)
-                
-                # После активации медиа проигрываем приветствие
+
                 if not self._greeting_played:
-                    def _delayed_greeting():
-                        try:
-                            time.sleep(2.0)
-                            if self._greeting_played:
-                                return
-                            # Проверяем что звонок ещё активен и медиа есть
-                            try:
-                                ci_inner = self.getInfo()
-                                if ci_inner.stateText == "DISCONNECTED":
-                                    return
-                            except Exception:
-                                return
-                            if not self._audio_media:
-                                return
-                            greeting_path = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'audio', 'opening.wav'))
-                            if os.path.exists(greeting_path):
-                                played = self.play_audio_file(greeting_path)
-                                if played:
-                                    print(f"[AUDIO] Приветствие (c задержкой) проигрывается: {greeting_path}")
-                                    self._greeting_played = True
-                                else:
-                                    print(f"[AUDIO] Не удалось начать воспроизведение приветствия: {greeting_path}")
+                    try:
+                        greeting_path = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'audio', 'opening.wav'))
+                        if os.path.exists(greeting_path):
+                            played = self.play_audio_file(greeting_path)
+                            if played:
+                                print(f"[AUDIO] Приветствие проигрывается: {greeting_path}")
+                                self._greeting_played = True
                             else:
-                                print(f"[AUDIO] Файл приветствия не найден: {greeting_path}")
-                        except Exception as e:
-                            print(f"[AUDIO] Ошибка при отложенном воспроизведении приветствия: {e}")
-                    threading.Thread(target=_delayed_greeting, daemon=True).start()
+                                print(f"[AUDIO] Не удалось начать воспроизведение приветствия: {greeting_path}")
+                        else:
+                            print(f"[AUDIO] Файл приветствия не найден: {greeting_path}")
+                    except Exception as e:
+                        print(f"[AUDIO] Ошибка при попытке воспроизвести приветствие: {e}")
 
     def connect_stt_session(self, filename):
         self._recording_filename = filename
@@ -153,7 +137,7 @@ class Call(pj.Call):
                 
                 # Сначала проверяем естественное окончание по длительности файла
                 if (self._current_audio_duration > 0 and 
-                    elapsed_time >= self._current_audio_duration + 0.5):  # +0.5с буфер
+                    elapsed_time >= self._current_audio_duration + 0.5):  # +0,5с буфер
                     print(f"[AUDIO] Воспроизведение завершено естественным образом ({self._current_audio_duration:.1f}с)")
                     self.stop_audio_playback()
                 # Затем проверяем таймаут как запасной вариант
@@ -186,7 +170,7 @@ class Call(pj.Call):
             return False
             
         try:
-            # Остановка предыдущего плеера если он есть
+            # Остановка предыдущего плеера, если он есть
             if self._player:
                 try:
                     self._player.stopTransmit(self._audio_media)
@@ -202,8 +186,8 @@ class Call(pj.Call):
             # Создание и запуск нового плеера
             self._player = pj.AudioMediaPlayer()
             self._player.createPlayer(audio_file_path, pj.PJMEDIA_FILE_NO_LOOP if not loop else 0)
-            
-            # Правильная последовательность: сначала запускаем передачу от плеера к медиа
+
+            # Сначала запускаем передачу от плеера к медиа
             self._player.startTransmit(self._audio_media)
             self._player_start_time = time.time()  # Запоминаем время начала
             
@@ -227,17 +211,17 @@ class Call(pj.Call):
             return True
             
         try:
-            # Правильная последовательность: сначала остановка передачи, потом очистка
+            # Сначала остановка передачи, потом очистка
             if self._audio_media:
                 self._player.stopTransmit(self._audio_media)
             self._player = None
-            self._player_start_time = 0  # Сбрасываем время
-            self._current_audio_duration = 0  # Сбрасываем длительность
+            self._player_start_time = 0
+            self._current_audio_duration = 0
             print("[AUDIO] Воспроизведение остановлено")
             return True
         except Exception as e:
             print(f"[AUDIO] Ошибка при остановке воспроизведения: {e}")
-            self._player = None  # Принудительно очищаем даже при ошибке
+            self._player = None
             self._player_start_time = 0
             self._current_audio_duration = 0
             return False
