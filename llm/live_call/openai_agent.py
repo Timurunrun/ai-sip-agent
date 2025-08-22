@@ -187,13 +187,25 @@ class OpenAIAgent:
                 history.append({"role": "user", "content": user_text})
                 openai_messages = self._format_history_for_openai(history)
                 full_reply = ""
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=openai_messages,
-                    tools=self.tools,
-                    tool_choice="auto",
-                    reasoning={"effort": self.config.get("reasoning", "medium")},
+
+                reasoning_effort = (
+                    self.config.get("reasoning_effort")
+                    or (self.config.get("reasoning") or {}).get("effort")
                 )
+                verbosity = self.config.get("verbosity")
+
+                completion_kwargs = {
+                    "model": self.model,
+                    "messages": openai_messages,
+                    "tools": self.tools,
+                    "tool_choice": "auto",
+                }
+                if reasoning_effort:
+                    completion_kwargs["reasoning_effort"] = reasoning_effort
+                if verbosity:
+                    completion_kwargs["verbosity"] = verbosity
+
+                response = self.client.chat.completions.create(**completion_kwargs)
 
                 msg = response.choices[0].message
                 tool_calls = getattr(msg, "tool_calls", None)
@@ -203,7 +215,7 @@ class OpenAIAgent:
                     if isinstance(content, str) and content.strip().lower() in {"none", "null"}:
                         content = ""
                     record: Dict[str, Any] = {"role": m.role, "content": content}
-                    # Сохраняем tool_calls ассистента для восстановления контекста
+
                     tc_list = getattr(m, 'tool_calls', None)
                     if tc_list:
                         serialized = []

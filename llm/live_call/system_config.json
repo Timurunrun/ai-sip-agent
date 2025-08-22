@@ -6,7 +6,8 @@
         "reasoning_effort": "default"
     },
     "OpenAI": {
-        "LLM": "gpt-5",
-        "reasoning": {"effort": "medium"}
+        "LLM": "gpt-5-mini",
+        "reasoning": {"effort": "low"},
+        "verbosity": "low"
     }
 }
