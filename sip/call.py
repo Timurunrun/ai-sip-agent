@@ -30,7 +30,11 @@ class Call(pj.Call):
         self._greeting_ready_at = 0.0
 
         self._pending_hangup = False
+        self._pending_hangup_waiting_start = False
+        self._pending_hangup_requested_at = 0.0
         self._pending_hangup_reason = ""
+        self._pending_hangup_start_timeout = 8.0
+
         Call.current = self
 
     def onCallState(self, prm):
@@ -124,11 +128,11 @@ class Call(pj.Call):
 
     def check_pending_audio(self):
         """
-        Проверяет естественное окончание воспроизведения.
+        Проверяет естественное окончание воспроизведения и управляет отложенным завершением вызова.
         Должен вызываться из основного потока.
         """
         try:
-            # Если запланировано приветствие и пришло время — запускаем
+            # Приветствие
             if self._greeting_pending and not self._greeting_played and time.time() >= self._greeting_ready_at:
                 try:
                     greeting_path = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'audio', 'opening.wav'))
@@ -146,33 +150,31 @@ class Call(pj.Call):
                     print(f"[AUDIO] Ошибка при запуске приветствия: {e}")
                     self._greeting_pending = False
 
-            # Проверка окончания воспроизведения
-            if (self._player and self._player_start_time > 0):
+            # Контроль активного воспроизведения
+            if self._player and self._player_start_time > 0:
                 elapsed_time = time.time() - self._player_start_time
-                
-                # Сначала проверяем естественное окончание по длительности файла
-                if (self._current_audio_duration > 0 and 
-                    elapsed_time >= self._current_audio_duration + 0.5):  # +0,5с буфер
-                    print(f"[AUDIO] Воспроизведение завершено естественным образом ({self._current_audio_duration:.1f}с)")
+                if (self._current_audio_duration > 0 and elapsed_time >= self._current_audio_duration + 0.5):
+                    print(f"[AUDIO] Воспроизведение завершено ({self._current_audio_duration:.1f}с)")
                     self.stop_audio_playback()
-                # Затем проверяем таймаут как запасной вариант
                 elif elapsed_time > self._max_playback_duration:
-                    print(f"[AUDIO] Принудительная остановка воспроизведения по таймауту ({self._max_playback_duration}с)")
+                    print(f"[AUDIO] Принудительная остановка по таймауту ({self._max_playback_duration}с)")
                     self.stop_audio_playback()
 
-            # Если нет активного плеера и запрошен отложенный hangup — выполняем
-            if self._pending_hangup and not self._player:
-                try:
-                    import pjsua2 as pj
-                    prm = pj.CallOpParam()
-                    self.hangup(prm)
-                    print(f"[CALL] Отложенное завершение вызова выполнено ({self._pending_hangup_reason})")
-                except Exception as e:
-                    print(f"[CALL] Ошибка при отложенном завершении: {e}")
-                finally:
-                    self._pending_hangup = False
-                    self._pending_hangup_reason = ""
-                
+            if self._pending_hangup:
+                now = time.time()
+                if self._pending_hangup_waiting_start:
+                    # Ждём появления плеера
+                    if self._player:
+                        self._pending_hangup_waiting_start = False
+                        print(f"[CALL] Прощальное воспроизведение началось, ждём окончания для завершения ({self._pending_hangup_reason})")
+                    elif now - self._pending_hangup_requested_at > self._pending_hangup_start_timeout:
+                        # Плеер так и не появился — завершаем, чтобы не висеть бесконечно
+                        print(f"[CALL] Таймаут ожидания старта прощальной фразы, завершаем вызов ({self._pending_hangup_reason})")
+                        self._execute_hangup()
+                else:
+                    # Ожидаем окончания текущего или уже завершившегося воспроизведения
+                    if not self._player:
+                        self._execute_hangup()
         except Exception as e:
             print(f"[AUDIO] Ошибка в check_pending_audio: {e}")
 
@@ -219,6 +221,11 @@ class Call(pj.Call):
             self._player.startTransmit(self._audio_media)
             self._player_start_time = time.time()  # Запоминаем время начала
             
+            # Если мы ждали старта прощального воспроизведения, фиксируем переход
+            if self._pending_hangup and self._pending_hangup_waiting_start:
+                self._pending_hangup_waiting_start = False
+                print(f"[CALL] Прощальное воспроизведение стартовало ({self._pending_hangup_reason})")
+
             duration_info = f" (длительность: {self._current_audio_duration:.1f}с)" if self._current_audio_duration > 0 else ""
             print(f"[AUDIO] Воспроизведение началось: {os.path.basename(audio_file_path)}{duration_info}")
             return True
@@ -254,33 +261,60 @@ class Call(pj.Call):
             self._current_audio_duration = 0
             return False
 
-    def request_hangup_after_playback(self, reason: str = "", immediate: bool = False):
-        """Помечает вызов на завершение после окончания текущего аудио.
+    def request_hangup_after_playback(self, reason: str = "", immediate: bool = False, expect_future_playback: bool = True):
+        """Запрашивает плавное завершение вызова после прощальной фразы.
 
-        Если immediate=True и нет активного плеера — завершает сразу.
-        Если immediate=False и плеер ещё не стартовал (но ожидается) — ждёт до окончания будущего воспроизведения.
+        Args:
+            reason: Причина завершения
+            immediate: Если True и нет активного плеера — завершить немедленно
+            expect_future_playback: Если True и сейчас нет плеера — подождать запуска будущего (процесс TTS)
         """
-        if not self._pending_hangup:
-            self._pending_hangup_reason = reason or ""
+        self._pending_hangup_reason = reason or self._pending_hangup_reason
 
-        if not self._player:
-            if immediate:
-                try:
-                    import pjsua2 as pj
-                    prm = pj.CallOpParam()
-                    self.hangup(prm)
-                    print(f"[CALL] Немедленное завершение вызова ({self._pending_hangup_reason})")
-                except Exception as e:
-                    print(f"[CALL] Ошибка немедленного завершения: {e}")
-                return
-            # Просто ставим флаг и ждём (check_pending_audio выполнит hangup когда плеер будет остановлен или так и не начнётся)
-            self._pending_hangup = True
-            print(f"[CALL] Запрошено завершение (ожидание воспроизведения) ({self._pending_hangup_reason})")
+        # Если уже запрошено завершение
+        if self._pending_hangup:
+            if immediate and not self._player and not self._pending_hangup_waiting_start:
+                self._execute_hangup()
             return
 
-        # Плеер активен — дождёмся окончания
-        self._pending_hangup = True
-        print(f"[CALL] Запрошено завершение после воспроизведения ({self._pending_hangup_reason})")
+        if self._player:
+            # Идёт воспроизведение, дождёмся его конца
+            self._pending_hangup = True
+            self._pending_hangup_waiting_start = False
+            self._pending_hangup_requested_at = time.time()
+            print(f"[CALL] Запрошено завершение после текущего воспроизведения ({self._pending_hangup_reason})")
+            return
+
+        if immediate and not expect_future_playback:
+            print(f"[CALL] Немедленное завершение без воспроизведения ({self._pending_hangup_reason})")
+            self._execute_hangup()
+            return
+
+        if expect_future_playback:
+            # Ждём появления аудио на прощание
+            self._pending_hangup = True
+            self._pending_hangup_waiting_start = True
+            self._pending_hangup_requested_at = time.time()
+            print(f"[CALL] Запрошено завершение: ждём старта прощальной фразы ({self._pending_hangup_reason})")
+        else:
+            # Ожидать нечего, завершаем немедленно
+            print(f"[CALL] Завершение без ожидания воспроизведения ({self._pending_hangup_reason})")
+            self._execute_hangup()
+
+    def _execute_hangup(self):
+        """Выполняет фактический hangup и сбрасывает флаги."""
+        try:
+            import pjsua2 as pj
+            prm = pj.CallOpParam()
+            self.hangup(prm)
+            print(f"[CALL] Завершение вызова выполнено ({self._pending_hangup_reason})")
+        except Exception as e:
+            print(f"[CALL] Ошибка при завершении вызова: {e}")
+        finally:
+            self._pending_hangup = False
+            self._pending_hangup_waiting_start = False
+            self._pending_hangup_requested_at = 0.0
+            self._pending_hangup_reason = ""
 
     def start_audio_streaming(self, media_index):
         if self.audio_streaming:
