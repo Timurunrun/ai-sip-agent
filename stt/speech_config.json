@@ -6,7 +6,7 @@
         "channels": 1,
         "interim_results": "true",
         "endpointing": "150",
-        "utterance_end_ms": "1000",
+        "utterance_end_ms": "1200",
         "vad_events": "true",
         "language": "ru",
         "model": "nova-2",

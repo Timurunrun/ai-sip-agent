@@ -58,8 +58,10 @@ class OpenAIAgent:
     def __init__(self):
         self.client = OpenAI()
         self.funnel_stages = load_enriched_funnel_config()
-        questions = self.get_all_questions()
-        questions_text = '\n'.join(f'- {q}' for q in questions) if questions else 'Нет вопросов'
+        
+        # Собираем вопросы с примечаниями
+        questions_with_comments = self._collect_questions_with_comments()
+        questions_text = '\n'.join(f'- {q}' for q in questions_with_comments) if questions_with_comments else 'Нет вопросов'
 
         self.system_prompt = load_system_prompt()
         self.system_prompt = f"{self.system_prompt}\n\n[ВОПРОСЫ ДЛЯ КЛИЕНТА]\n{questions_text}"
@@ -104,6 +106,23 @@ class OpenAIAgent:
             for q in stage['questions']:
                 questions.append(q.get('name', ''))
         return questions
+
+    def _collect_questions_with_comments(self) -> List[str]:
+        """Возвращает список строк вида 'Название — комментарий' (если комментарий есть)."""
+        lines: List[str] = []
+        for stage in self.funnel_stages:
+            for q in stage.get('questions', []):
+                name = (q.get('name') or '').strip()
+                if not name:
+                    continue
+                comment = (q.get('comment') or '').strip()
+                if comment:
+                    # Убираем перевод строк в комментарии, чтобы не ломать формат
+                    one_line_comment = ' '.join(comment.split())
+                    lines.append(f"{name} — {one_line_comment}")
+                else:
+                    lines.append(name)
+        return lines
 
     def _get_history_file_path(self, lead_id: Optional[str]) -> Optional[str]:
         if not lead_id:

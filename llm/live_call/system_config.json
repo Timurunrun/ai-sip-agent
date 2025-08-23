@@ -16,7 +16,7 @@
         "LLM": "gpt-5",
         "reasoning": {"effort": "minimal"},
         "verbosity": "low",
-        "timeout_seconds": 14,
+        "timeout_seconds": 7,
         "timeout_fallback_phrases": [
             "Извините, кажется, связь прервалась. Повторите, пожалуйста.",
             "Какие-то проблемы были со связью, не могли бы вы повторить?",
