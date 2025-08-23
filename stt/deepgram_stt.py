@@ -6,6 +6,7 @@ import json
 import logging
 from llm.live_call import process_transcript, process_transcript_async
 import time
+import random
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,7 +45,9 @@ class DeepgramSTTSession:
         self._send_task = None
         self._recv_task = None
         self._last_utterance_end_time = None
-        self.config = load_speech_config().get('Deepgram', {})
+        cfg = load_speech_config() or {}
+        self.config = cfg.get('Deepgram', {})
+        self._interjections_enabled = bool(self.config.get('interjections_enabled', False))
 
     async def _connect_ws(self):
         url = (
@@ -100,6 +103,27 @@ class DeepgramSTTSession:
                 full_text = ' '.join([str(b).strip() for b in buffer]).strip()
                 if full_text:
                     print(f"[STT] Расшифровка: {full_text}")
+
+                    if self._interjections_enabled:
+                        def play_interjection():
+                            try:
+                                inter_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'audio', 'interjections'))
+                                if not os.path.isdir(inter_dir):
+                                    logging.debug(f"[INTERJECTION] Директория не найдена: {inter_dir}")
+                                    return
+                                files = [f for f in os.listdir(inter_dir) if f.lower().endswith('.wav')]
+                                if not files:
+                                    logging.debug("[INTERJECTION] Нет .wav файлов в interjections")
+                                    return
+                                chosen = random.choice(files)
+                                full_path = os.path.join(inter_dir, chosen)
+                                from sip.audio_player import queue_audio_for_playback
+                                queue_audio_for_playback(full_path)
+                                logging.info(f"[INTERJECTION] Проигрывается: {chosen}")
+                            except Exception as e:
+                                logging.debug(f"[INTERJECTION] Ошибка: {e}")
+                        threading.Thread(target=play_interjection, daemon=True).start()
+
                     def llm_thread():
                         import inspect
                         import time as _time

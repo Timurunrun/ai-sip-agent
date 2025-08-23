@@ -83,6 +83,7 @@ class GroqAgent:
         self.llm_busy = False
         self.history_dir = os.path.join(os.path.dirname(__file__), '..', 'dialog_history')
         os.makedirs(self.history_dir, exist_ok=True)
+        self.llm_timeout_seconds = self.config.get("timeout_seconds", 7)
         logging.info(f"[GROQ] Агент инициализирован с моделью {self.model}")
 
     def get_all_questions(self) -> List[str]:
@@ -156,16 +157,32 @@ class GroqAgent:
                 history.append({"role": "user", "content": user_text})
                 groq_messages = self._format_history_for_groq(history)
                 full_reply = ""
-                
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=groq_messages,
-                    tools=self.tools,
-                    tool_choice="auto",
-                    temperature=self.config.get("temperature", 0.6),
-                    reasoning_effort=self.config.get("reasoning_effort", "medium"),
-                    max_tokens=self.config.get("max_tokens", 1024)
-                )
+
+                loop = asyncio.get_running_loop()
+
+                def _api_call():
+                    return self.client.chat.completions.create(
+                        model=self.model,
+                        messages=groq_messages,
+                        tools=self.tools,
+                        tool_choice="auto",
+                        temperature=self.config.get("temperature", 0.6),
+                        reasoning_effort=self.config.get("reasoning_effort", "medium"),
+                        max_tokens=self.config.get("max_tokens", 1024)
+                    )
+
+                api_future = loop.run_in_executor(None, _api_call)
+
+                try:
+                    response = await asyncio.wait_for(api_future, timeout=self.llm_timeout_seconds)
+                except asyncio.TimeoutError:
+                    fallback = "Я прошу прощения, у меня связь прервалась, можете повторить, о чём вы говорили?"
+                    logging.warning(f"[GROQ] Таймаут {self.llm_timeout_seconds}s — возвращаем fallback")
+                    self._send_to_tts_and_play(fallback)
+                    history.append({"role": "assistant", "content": fallback})
+                    self._save_history(lead_id, history)
+                    self._log_conversation_history(history, lead_id)
+                    return fallback
 
                 msg = response.choices[0].message
                 tool_calls = getattr(msg, "tool_calls", None)

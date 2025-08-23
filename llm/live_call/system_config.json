@@ -3,11 +3,13 @@
         "LLM": "qwen/qwen3-32b",
         "temperature": 0.6,
         "max_tokens": 4096,
-        "reasoning_effort": "default"
+        "reasoning_effort": "default",
+        "timeout_seconds": 5
     },
     "OpenAI": {
-        "LLM": "gpt-5-mini",
-        "reasoning": {"effort": "low"},
-        "verbosity": "low"
+        "LLM": "gpt-5",
+        "reasoning": {"effort": "minimal"},
+        "verbosity": "low",
+        "timeout_seconds": 7
     }
 }
