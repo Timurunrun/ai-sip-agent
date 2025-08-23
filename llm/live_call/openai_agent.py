@@ -161,31 +161,34 @@ class OpenAIAgent:
         """Преобразует локальную историю в формат OpenAI, сохраняя tool-взаимодействия.
 
         Поддерживаются роли:
-        - system (добавляется один раз в начале)
+        - system
         - user
-        - assistant (включая tool_calls, если сохранены)
-        - tool (ответы инструментов: содержат tool_call_id)
+        - assistant (включая tool_calls)
+        - tool (ответы инструментов)
 
         Старые записи без tool_calls остаются валидными.
         """
         openai_messages: List[Dict[str, Any]] = [{"role": "system", "content": self.system_prompt}]
         for msg in history:
             role = (msg.get('role') or '').lower()
+            content = (msg.get('content') or '').strip()
+            if role == 'system':
+                # Дополнительные системные пометки (например, о новом звонке)
+                if content:
+                    openai_messages.append({"role": "system", "content": content})
+                continue
             if role not in {"user", "assistant", "tool"}:
                 continue
-            content = (msg.get('content') or '').strip()
             if not content and role != 'assistant':  # пустые user/tool сообщения пропускаем
                 continue
             if role == 'assistant':
                 m: Dict[str, Any] = {"role": "assistant", "content": content}
-                # если когда-то сохранили tool_calls
                 if 'tool_calls' in msg and isinstance(msg['tool_calls'], list) and msg['tool_calls']:
                     m['tool_calls'] = msg['tool_calls']
                 openai_messages.append(m)
             elif role == 'user':
                 openai_messages.append({"role": "user", "content": content})
             elif role == 'tool':
-                # Сообщение-инструмент. API ожидает tool_call_id и content.
                 tool_call_id = msg.get('tool_call_id') or msg.get('id') or ''
                 if tool_call_id:
                     openai_messages.append({

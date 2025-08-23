@@ -154,14 +154,16 @@ class GroqAgent:
 
     def _format_history_for_groq(self, history: List[Dict[str, Any]]) -> List[Dict[str, str]]:
         groq_messages = [{"role": "system", "content": self.system_prompt}]
-        
         for msg in history:
-            role = msg.get('role', '').lower()
+            role = (msg.get('role', '').lower())
             content = str(msg.get('content', '')).strip()
-            
+            if role == 'system':
+                # Дополнительные системные пометки (например, о новом звонке)
+                if content:
+                    groq_messages.append({"role": "system", "content": content})
+                continue
             if role in ['user', 'assistant'] and content:
                 groq_messages.append({"role": role, "content": content})
-        
         return groq_messages
 
     async def process_async(self, user_text: str) -> str:

@@ -40,7 +40,7 @@ class Account(pj.Account):
 
         # Инициализируем LLM-агент
         from llm.live_call import get_llm_agent
-        get_llm_agent()
+        agent = get_llm_agent()
 
         ci = call.getInfo()
         print(f"[PJSUA] Звонок с номера: {ci.remoteUri}")
@@ -76,6 +76,17 @@ class Account(pj.Account):
                 if hasattr(self.sip_event_queue, 'config') and isinstance(self.sip_event_queue.config, dict):
                     self.sip_event_queue.config['ACTIVE_LEAD_ID'] = lead['id']
                 print(f"[CRM] Контакт/сделка: contact_id={contact.get('id') if contact else None}, lead_id={lead['id']}")
+
+                try:
+                    history = agent._load_history(call.lead_id)
+                    if history:
+                        history.append({
+                            'role': 'system',
+                            'content': 'СИСТЕМНАЯ ПОМЕТКА: Звонок был завершён. Сейчас клиент перезвонил. Начался новый звонок: значит, в прошлом звонке либо прервалась связь, либо диалог закончился. Если вы не закончили беседу, продолжи её с того же места, упомянув, что что-то со связью. Если вы уже закончили беседу в прошлый раз, то просто выслушай клиента, вдруг у него появлись вопросы, и ответь на них.'
+                        })
+                        agent._save_history(call.lead_id, history)
+                except Exception as e:
+                    print(f"[LLM] Не удалось добавить системную пометку о новом звонке: {e}")
                 lead_found = True
                 break
             print(f"[CRM] Попытка {attempt}: контакт/сделка не найдены")
