@@ -4,6 +4,7 @@ import logging
 import os
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
+import random
 
 from openai import OpenAI
 from crm.crm_api import load_enriched_funnel_config
@@ -91,6 +92,9 @@ class OpenAIAgent:
         self.history_dir = os.path.join(os.path.dirname(__file__), '..', 'dialog_history')
         os.makedirs(self.history_dir, exist_ok=True)
         self.llm_timeout_seconds = self.config.get("timeout_seconds", 7)  # Максимальное время ожидания ответа LLM
+        self.timeout_fallback_phrases = self.config.get("timeout_fallback_phrases", [
+            "Я прошу прощения, у меня связь прервалась, можете повторить, о чём вы говорили?"
+        ])
         logging.info(f"[OpenAI] Агент инициализирован с моделью {self.model}")
 
     # ========================= История =========================
@@ -215,8 +219,8 @@ class OpenAIAgent:
                 try:
                     response = await asyncio.wait_for(api_future, timeout=self.llm_timeout_seconds)
                 except asyncio.TimeoutError:
-                    fallback = "Я прошу прощения, у меня связь прервалась, можете повторить, о чём вы говорили?"
-                    logging.warning(f"[OpenAI] Таймаут {self.llm_timeout_seconds}s — возвращаем fallback")
+                    fallback = random.choice(self.timeout_fallback_phrases) if self.timeout_fallback_phrases else "Я прошу прощения, у меня связь прервалась, можете повторить, о чём вы говорили?"
+                    logging.warning(f"[OpenAI] Таймаут {self.llm_timeout_seconds}s — возвращаем fallback: {fallback}")
                     self._send_to_tts_and_play(fallback)
                     history.append({"role": "assistant", "content": fallback})
                     self._save_history(lead_id, history)
