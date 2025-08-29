@@ -59,6 +59,19 @@ class Account(pj.Account):
 
         match = re.search(r'sip:([^@>]+)@', ci.remoteUri)
         phone_number = match.group(1) if match else None
+
+        if phone_number:
+            digits_only = re.sub(r'\D', '', phone_number)
+            if len(digits_only) < 10:
+                print(f"[PJSUA] Обнаружен звонок от ({digits_only}): меньше 10 цифр, это сканер, отклоняем...")
+                try:
+                    call_prm = pj.CallOpParam()
+                    call_prm.statusCode = 403
+                    call.answer(call_prm)
+                    call.hangup()
+                except Exception as e:
+                    print(f"[PJSUA] Error rejecting short-number call: {e}")
+                return
         if not phone_number:
             print(f"[PJSUA] Не удалось извлечь номер из {ci.remoteUri}")
             return
