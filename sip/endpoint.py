@@ -8,7 +8,7 @@ def create_endpoint():
     ep_cfg = pj.EpConfig()
     ep_cfg.logConfig.level = 2
     ep_cfg.logConfig.consoleLevel = 2
-    ep_cfg.uaConfig.maxCalls = 1
+    ep_cfg.uaConfig.maxCalls = 24
     ep_cfg.medConfig.quality = 6
     ep_cfg.uaConfig.userAgent = "Python SIP Agent"
     ep_cfg.medConfig.sndClockRate = 16000

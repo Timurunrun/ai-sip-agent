@@ -78,7 +78,15 @@ class DeepgramSTTSession:
                 f_read.seek(position)
                 chunk = f_read.read(self.config.get('chunk', 1600) * 2)
                 if chunk:
-                    await self.ws.send(chunk)
+                    try:
+                        if self.ws is None or getattr(self.ws, 'closed', False):    # Если соединение уже закрыто, выходим
+                            break
+                        await self.ws.send(chunk)
+                    # Соединение закрыто, прекращаем отправку
+                    except websockets.exceptions.ConnectionClosedOK:
+                        break
+                    except websockets.exceptions.ConnectionClosed:
+                        break
                     position += len(chunk)
                     no_data_count = 0
                 else:
@@ -86,83 +94,91 @@ class DeepgramSTTSession:
                     # Динамическая задержка для увеличения скорости (начинаем с малой, увеличиваем при отсутствии данных)
                     delay = min(0.02 + (no_data_count * 0.01), 0.1)
                     await asyncio.sleep(delay)
-            await self.ws.send(json.dumps({"type": "CloseStream"}))
+            # Сигнал о завершении потока, если соединение ещё открыто
+            try:
+                if self.ws and not getattr(self.ws, 'closed', False):
+                    await self.ws.send(json.dumps({"type": "CloseStream"}))
+            except Exception:
+                pass
 
     async def _receive_loop(self):
         buffer = []
-        async for message in self.ws:
-            data = json.loads(message)
-            if 'type' in data and data['type'] == 'SpeechStarted':
-                timestamp = data.get('timestamp', 0)
-                print(f"[VAD EVENT] SpeechStarted at {timestamp}s")
-                continue
-            if 'type' in data and data['type'] == 'UtteranceEnd':
-                last_word_end = data.get('last_word_end', 0)
-                self._last_utterance_end_time = time.time()
-                print(f"[UTTERANCE END] Конец речи в {last_word_end}s (ts={self._last_utterance_end_time:.3f})")
-                full_text = ' '.join([str(b).strip() for b in buffer]).strip()
-                if full_text:
-                    print(f"[STT] Расшифровка: {full_text}")
+        try:
+            async for message in self.ws:
+                data = json.loads(message)
+                if 'type' in data and data['type'] == 'SpeechStarted':
+                    timestamp = data.get('timestamp', 0)
+                    print(f"[VAD EVENT] SpeechStarted at {timestamp}s")
+                    continue
+                if 'type' in data and data['type'] == 'UtteranceEnd':
+                    last_word_end = data.get('last_word_end', 0)
+                    self._last_utterance_end_time = time.time()
+                    print(f"[UTTERANCE END] Конец речи в {last_word_end}s (ts={self._last_utterance_end_time:.3f})")
+                    full_text = ' '.join([str(b).strip() for b in buffer]).strip()
+                    if full_text:
+                        print(f"[STT] Расшифровка: {full_text}")
 
-                    if self._interjections_enabled:
-                        def play_interjection():
-                            try:
-                                inter_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'audio', 'interjections'))
-                                if not os.path.isdir(inter_dir):
-                                    logging.debug(f"[INTERJECTION] Директория не найдена: {inter_dir}")
-                                    return
-                                files = [f for f in os.listdir(inter_dir) if f.lower().endswith('.wav')]
-                                if not files:
-                                    logging.debug("[INTERJECTION] Нет .wav файлов в interjections")
-                                    return
-                                chosen = random.choice(files)
-                                full_path = os.path.join(inter_dir, chosen)
-                                from sip.audio_player import queue_audio_for_playback
-                                queue_audio_for_playback(full_path)
-                                logging.info(f"[INTERJECTION] Проигрывается: {chosen}")
-                            except Exception as e:
-                                logging.debug(f"[INTERJECTION] Ошибка: {e}")
-                        threading.Thread(target=play_interjection, daemon=True).start()
-
-                    def llm_thread():
-                        import inspect
-                        import time as _time
-                        try:
-                            if inspect.iscoroutinefunction(process_transcript_async):
+                        if self._interjections_enabled:
+                            def play_interjection():
                                 try:
-                                    loop = asyncio.get_running_loop()
-                                except RuntimeError:
-                                    loop = None
-                                if loop and loop.is_running():
-                                    fut = asyncio.run_coroutine_threadsafe(process_transcript_async(full_text), loop)
-                                    llm_response = fut.result()
+                                    inter_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'audio', 'interjections'))
+                                    if not os.path.isdir(inter_dir):
+                                        logging.debug(f"[INTERJECTION] Директория не найдена: {inter_dir}")
+                                        return
+                                    files = [f for f in os.listdir(inter_dir) if f.lower().endswith('.wav')]
+                                    if not files:
+                                        logging.debug("[INTERJECTION] Нет .wav файлов в interjections")
+                                        return
+                                    chosen = random.choice(files)
+                                    full_path = os.path.join(inter_dir, chosen)
+                                    from sip.audio_player import queue_audio_for_playback
+                                    queue_audio_for_playback(full_path)
+                                    logging.info(f"[INTERJECTION] Проигрывается: {chosen}")
+                                except Exception as e:
+                                    logging.debug(f"[INTERJECTION] Ошибка: {e}")
+                            threading.Thread(target=play_interjection, daemon=True).start()
+
+                        def llm_thread():
+                            import inspect
+                            import time as _time
+                            try:
+                                if inspect.iscoroutinefunction(process_transcript_async):
+                                    try:
+                                        loop = asyncio.get_running_loop()
+                                    except RuntimeError:
+                                        loop = None
+                                    if loop and loop.is_running():
+                                        fut = asyncio.run_coroutine_threadsafe(process_transcript_async(full_text), loop)
+                                        llm_response = fut.result()
+                                    else:
+                                        llm_response = asyncio.run(process_transcript_async(full_text))
                                 else:
-                                    llm_response = asyncio.run(process_transcript_async(full_text))
+                                    llm_response = process_transcript(full_text)
+                            except Exception as e:
+                                llm_response = f"[LLM] Ошибка: {e}"
+                            delay_ms = None
+                            if self._last_utterance_end_time:
+                                delay_ms = int((_time.time() - self._last_utterance_end_time) * 1000)
+                            if delay_ms is not None:
+                                logging.info(f"[LLM] Ответ готов (задержка {delay_ms} мс)")
                             else:
-                                llm_response = process_transcript(full_text)
-                        except Exception as e:
-                            llm_response = f"[LLM] Ошибка: {e}"
-                        delay_ms = None
-                        if self._last_utterance_end_time:
-                            delay_ms = int((_time.time() - self._last_utterance_end_time) * 1000)
-                        if delay_ms is not None:
-                            logging.info(f"[LLM] Ответ готов (задержка {delay_ms} мс)")
-                        else:
-                            logging.info(f"[LLM] Ответ готов")
-                    threading.Thread(target=llm_thread, daemon=True).start()
-                buffer = []
-                continue
-            if 'channel' in data:
-                if isinstance(data['channel'], dict):
-                    is_final = data.get('is_final', False)
-                    if is_final:
-                        channel = data['channel']
-                        alts = channel.get('alternatives', [])
-                        if alts and len(alts) > 0:
-                            transcript = alts[0].get('transcript', '').strip()
-                            if transcript:
-                                print(transcript)
-                            buffer.append(transcript)
+                                logging.info(f"[LLM] Ответ готов")
+                        threading.Thread(target=llm_thread, daemon=True).start()
+                    buffer = []
+                    continue
+                if 'channel' in data:
+                    if isinstance(data['channel'], dict):
+                        is_final = data.get('is_final', False)
+                        if is_final:
+                            channel = data['channel']
+                            alts = channel.get('alternatives', [])
+                            if alts and len(alts) > 0:
+                                transcript = alts[0].get('transcript', '').strip()
+                                if transcript:
+                                    print(transcript)
+                                buffer.append(transcript)
+        except (websockets.exceptions.ConnectionClosedOK, websockets.exceptions.ConnectionClosed):
+            pass
 
     def connect(self):
         def run():
@@ -179,25 +195,58 @@ class DeepgramSTTSession:
             asyncio.set_event_loop(self.loop)
             self._send_task = self.loop.create_task(self._send_loop())
             self._recv_task = self.loop.create_task(self._receive_loop())
-            self.loop.run_until_complete(asyncio.gather(self._send_task, self._recv_task))
+            done = self.loop.run_until_complete(asyncio.gather(
+                self._send_task,
+                self._recv_task,
+                return_exceptions=True
+            ))
+            for exc in done:
+                if isinstance(exc, Exception):
+                    if isinstance(exc, (asyncio.CancelledError, websockets.exceptions.ConnectionClosedOK, websockets.exceptions.ConnectionClosed)):
+                        continue
+                    logging.debug(f"[Deepgram] Task finished with exception: {exc}")
         t = threading.Thread(target=run, daemon=True)
         t.start()
         return t
 
     def close(self):
-        if self.ws is None or self.loop is None:
+        self.stop_event.set()
+        if self.loop is None:
             return
-        async def _close_ws():
+
+        async def _shutdown():
+            # Пытаемся корректно завершить отправку/приём
             try:
-                await self.ws.send(json.dumps({"type": "CloseStream"}))
-                await asyncio.sleep(0.2)
-                await self.ws.close()
-            except Exception as e:
-                logging.error(f"Ошибка при закрытии Deepgram WebSocket: {e}")
+                if self.ws and not getattr(self.ws, 'closed', False):
+                    try:
+                        await self.ws.send(json.dumps({"type": "CloseStream"}))
+                        await asyncio.sleep(0.1)
+                    except Exception:
+                        pass
+            finally:
+                # Отменяем задачи, если они ещё активны
+                for task in (self._send_task, self._recv_task):
+                    try:
+                        if task and not task.done():
+                            task.cancel()
+                    except Exception:
+                        pass
+                # Закрываем сокет
+                try:
+                    if self.ws and not getattr(self.ws, 'closed', False):
+                        await self.ws.close()
+                except Exception:
+                    pass
+
         try:
             if self.loop.is_running():
-                fut = asyncio.run_coroutine_threadsafe(_close_ws(), self.loop)
+                fut = asyncio.run_coroutine_threadsafe(_shutdown(), self.loop)
+                # Ждём немного, чтобы корректно завершиться
+                try:
+                    fut.result(timeout=1.0)
+                except Exception:
+                    pass
             else:
-                self.loop.run_until_complete(_close_ws())
+                self.loop.run_until_complete(_shutdown())
         except Exception as e:
-            logging.error(f"Ошибка при завершении Deepgram STT: {e}")
+            logging.debug(f"Ошибка при завершении Deepgram STT: {e}")
