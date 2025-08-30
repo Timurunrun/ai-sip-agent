@@ -84,5 +84,11 @@ enriched_funnel_config.json
 enriched_post_funnel_config.json
 tmp/
 
+# PJSUA build artifacts
+pjsua_build/local/
+pjsua_build/lib/
+pjsua_build/pjproject/
+pjsua_build/venv/
+
 # Test files
 TEST*.wav
