@@ -1,9 +1,9 @@
 import threading
 import pjsua2 as pj
 from .call import Call
+from .command_queue import queue_command
 import re
 import json
-import uuid
 import os
 import time
 from pathlib import Path
@@ -49,10 +49,7 @@ class Account(pj.Account):
         if "sipvicious" in ci.remoteUri.lower():
             print("[PJSUA] Обнаружен звонок от sipvicious, отклоняем...")
             try:
-                call_prm = pj.CallOpParam()
-                call_prm.statusCode = 403
-                call.answer(call_prm)
-                call.hangup()
+                queue_command("hangup", statusCode=403, reason="reject sipvicious")
             except Exception as e:
                 print(f"[PJSUA] Ошибка при отклонении: {e}")
             return
@@ -65,10 +62,7 @@ class Account(pj.Account):
             if len(digits_only) < 10:
                 print(f"[PJSUA] Обнаружен звонок от ({digits_only}): меньше 10 цифр, это сканер, отклоняем...")
                 try:
-                    call_prm = pj.CallOpParam()
-                    call_prm.statusCode = 403
-                    call.answer(call_prm)
-                    call.hangup()
+                    queue_command("hangup", statusCode=403, reason="reject short number")
                 except Exception as e:
                     print(f"[PJSUA] Error rejecting short-number call: {e}")
                 return
@@ -109,7 +103,7 @@ class Account(pj.Account):
         if not lead_found:
             print("[CRM] Сделка не найдена, сбрасываем вызов")
             try:
-                call.hangup()
+                queue_command("hangup", statusCode=603, reason="lead not found")
             except Exception as e:
                 print(f"[CRM] Ошибка при сбросе: {e}")
             return
