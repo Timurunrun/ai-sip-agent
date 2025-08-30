@@ -14,7 +14,7 @@ def process_command_queue():
     import pjsua2 as pj
     while not _cmd_q.empty():
         cmd, kw = _cmd_q.get_nowait()
-        if cmd in ("hangup", "hangup_after_playback") and Call.current:
+        if cmd in ("hangup", "hangup_after_playback", "answer") and Call.current:
             try:
                 if cmd == "hangup":
                     prm = pj.CallOpParam()
@@ -22,6 +22,11 @@ def process_command_queue():
                         prm.statusCode = kw["statusCode"]
                     Call.current.hangup(prm)
                     logging.info(f"[PJSUA] Успешный сброс вызова ({kw.get('reason','')})")
+                elif cmd == "answer":
+                    prm = pj.CallOpParam()
+                    prm.statusCode = kw.get("statusCode", 200)
+                    Call.current.answer(prm)
+                    logging.info(f"[PJSUA] Вызов принят ({prm.statusCode})")
                 else:  # hangup_after_playback
                     Call.current.request_hangup_after_playback(kw.get('reason',''), immediate=kw.get('immediate', False))
                     logging.info(f"[PJSUA] Отложенный сброс вызова запрошен ({kw.get('reason','')})")

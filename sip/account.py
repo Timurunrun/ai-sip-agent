@@ -35,40 +35,33 @@ class Account(pj.Account):
 
     def onIncomingCall(self, prm):
         print("[PJSUA] Входящий звонок...")
-        call = Call(self, prm.callId)
-        self.sip_event_queue.current_call = call
-
-        # Инициализируем LLM-агент
-        from llm.live_call import get_llm_agent
-        agent = get_llm_agent()
-
-        ci = call.getInfo()
+        # Создаём временный объект звонка только чтобы прочитать информацию о нём
+        temp_call = Call(self, prm.callId)
+        ci = temp_call.getInfo()
         print(f"[PJSUA] Звонок с номера: {ci.remoteUri}")
 
-        # Фильтр SIPVicious
+        # 0) Фильтр SIPVicious — игнорируем (не отвечаем и не сбрасываем)
         if "sipvicious" in ci.remoteUri.lower():
-            print("[PJSUA] Обнаружен звонок от sipvicious, отклоняем...")
-            try:
-                queue_command("hangup", statusCode=403, reason="reject sipvicious")
-            except Exception as e:
-                print(f"[PJSUA] Ошибка при отклонении: {e}")
+            print("[PJSUA] Обнаружен звонок от SIPVicious — игнорируем")
             return
 
+        # 1) Извлекаем номер и проверяем длину — отвечаем только если > 10 цифр
         match = re.search(r'sip:([^@>]+)@', ci.remoteUri)
         phone_number = match.group(1) if match else None
-
-        if phone_number:
-            digits_only = re.sub(r'\D', '', phone_number)
-            if len(digits_only) < 10:
-                print(f"[PJSUA] Обнаружен звонок от ({digits_only}): меньше 10 цифр, это сканер, отклоняем...")
-                try:
-                    queue_command("hangup", statusCode=403, reason="reject short number")
-                except Exception as e:
-                    print(f"[PJSUA] Error rejecting short-number call: {e}")
-                return
         if not phone_number:
-            print(f"[PJSUA] Не удалось извлечь номер из {ci.remoteUri}")
+            print(f"[PJSUA] Не удалось извлечь номер из {ci.remoteUri} — игнорируем")
             return
+        digits_only = re.sub(r'\D', '', phone_number)
+        if len(digits_only) <= 10:
+            print(f"[PJSUA] Обнаружен короткий номер ({digits_only}) — игнорируем")
+            return
+
+        # Подходящий звонок — продолжаем обработку
+        call = temp_call
+
+        # Инициализируем LLM-агент только для валидных звонков
+        from llm.live_call import get_llm_agent
+        agent = get_llm_agent()
         print(f"[PJSUA] Номер звонящего: {phone_number}")
 
         # 1. Поиск контакта/сделки в CRM
@@ -101,11 +94,7 @@ class Account(pj.Account):
                 time.sleep(1.0)
 
         if not lead_found:
-            print("[CRM] Сделка не найдена, сбрасываем вызов")
-            try:
-                queue_command("hangup", statusCode=603, reason="lead not found")
-            except Exception as e:
-                print(f"[CRM] Ошибка при сбросе: {e}")
+            print("[CRM] Сделка не найдена — не отвечаем на звонок")
             return
 
         # 2. Принять вызов и подключить STT запись
@@ -113,10 +102,12 @@ class Account(pj.Account):
         filename = TMP_RECORDINGS_DIR / f"call_{timestamp}.wav"
         call.connect_stt_session(str(filename))
 
-        call_prm = pj.CallOpParam()
-        call_prm.statusCode = 200
-        call.answer(call_prm)
-        print("[PJSUA] Вызов принят")
+        # Помечаем звонок активным в очереди и принимаем из главного потока
+        self.sip_event_queue.current_call = call
+        from .call import Call as _Call
+        _Call.current = call
+        queue_command("answer", statusCode=200)
+        print("[PJSUA] Принятие вызова запрошено")
 
         # 3. Обновить статус сделки
         if hasattr(call, 'lead_id'):

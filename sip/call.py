@@ -35,7 +35,7 @@ class Call(pj.Call):
         self._pending_hangup_reason = ""
         self._pending_hangup_start_timeout = 8.0
 
-        Call.current = self
+        # Не помечаем звонок глобально активным до фактического принятия
 
     def onCallState(self, prm):
         ci = self.getInfo()
