@@ -113,7 +113,6 @@ class Call(pj.Call):
     def connect_stt_session(self, filename):
         self._recording_filename = filename
         self._stt_session = DeepgramSTTSession(filename)
-        self._stt_session.connect()
 
     def _get_audio_duration(self, audio_file_path):
         try:
@@ -328,6 +327,10 @@ class Call(pj.Call):
             self._audio_media = pj.AudioMedia.typecastFromMedia(self.getMedia(media_index))
             self._audio_media.startTransmit(self._recorder)
             if self._stt_session:
+                try:
+                    self._stt_session.connect()
+                except Exception:
+                    pass
                 self._stt_session.start_streaming()
             
         except Exception as e:
