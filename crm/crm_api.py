@@ -20,22 +20,31 @@ class AmoCRMClient:
     def _base_request(self, endpoint: str, req_type: str = "get", parameters: Optional[dict] = None, data: Optional[dict] = None):
         url = f"https://{self.subdomain}.amocrm.ru{endpoint}"
         headers = {"Authorization": f"Bearer {self.access_token}"}
+        timeout = (5, 10)  # (connect, read) seconds
         try:
             if req_type == "get":
-                response = requests.get(url, headers=headers)
+                response = requests.get(url, headers=headers, timeout=timeout)
             elif req_type == "get_param":
-                response = requests.get(url, headers=headers, params=parameters)
+                response = requests.get(url, headers=headers, params=parameters, timeout=timeout)
             elif req_type == "post":
-                response = requests.post(url, headers=headers, json=data)
+                response = requests.post(url, headers=headers, json=data, timeout=timeout)
             elif req_type == "patch":
-                response = requests.patch(url, headers=headers, json=data)
+                response = requests.patch(url, headers=headers, json=data, timeout=timeout)
             else:
                 raise ValueError(f"Неизвестный тип запроса: {req_type}")
+
+            # 204 No Content — валидный ответ без тела, не считаем ошибкой
+            if response.status_code == 204 or not response.text:
+                return None
+
             response.raise_for_status()
             try:
                 return response.json()
-            except Exception as e:
-                logging.error(f"Не удалось декодировать JSON. HTTP status: {response.status_code}, Response text: {response.text}")
+            except Exception:
+                # Может прийти пустой ответ или текст, который не JSON
+                logging.debug(
+                    f"[CRM] Ответ без JSON. HTTP: {response.status_code}, Text length: {len(response.text) if response.text else 0}"
+                )
                 return None
         except requests.exceptions.RequestException as e:
             logging.exception(f"Ошибка запроса к AmoCRM: {e}")
@@ -75,7 +84,7 @@ class AmoCRMClient:
         headers = self._get_headers()
         data = {"status_id": status_id}
         url = f"https://{self.subdomain}.amocrm.ru{endpoint}"
-        resp = requests.patch(url, headers=headers, json=data)
+        resp = requests.patch(url, headers=headers, json=data, timeout=(5, 10))
         return resp.status_code, resp.text
 
     def update_lead_field(self, lead_id: int, field_id: int, value, field_type: str, enum_id: int = None):
@@ -115,7 +124,7 @@ class AmoCRMClient:
             field_obj["values"].append({"value": value})
         data["custom_fields_values"].append(field_obj)
         url = f"https://{self.subdomain}.amocrm.ru{endpoint}"
-        resp = requests.patch(url, headers=headers, json=data)
+        resp = requests.patch(url, headers=headers, json=data, timeout=(5, 10))
         return resp.status_code, resp.text
 
     def _get_headers(self):

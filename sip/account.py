@@ -52,8 +52,8 @@ class Account(pj.Account):
             print(f"[PJSUA] Не удалось извлечь номер из {ci.remoteUri} — игнорируем")
             return
         digits_only = re.sub(r'\D', '', phone_number)
-        if len(digits_only) <= 10:
-            print(f"[PJSUA] Обнаружен короткий номер ({digits_only}) — игнорируем")
+        if len(digits_only) != 11:
+            print(f"[PJSUA] Обнаружен не российский номер ({digits_only}) — игнорируем")
             return
 
         # Подходящий звонок — продолжаем обработку
